@@ -1,0 +1,10 @@
+.hvigor/
+oh_modules/
+**/build/
+**/.preview/
+artifacts/preview-stage/
+local.properties
+.idea/
+artifacts/*.hap
+artifacts/*.log
+
