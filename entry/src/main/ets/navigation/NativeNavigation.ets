@@ -7,20 +7,28 @@ import {
 import { Place } from './RoutePlanning';
 import { LaneLookAheadSession } from './LaneLookAheadSession';
 
+export interface NavigationPanel {
+  show(): void;
+  hide(): void;
+}
+
 // The SDK obtains and map-matches the current position in GCJ-02. Do not pass
 // raw system GPS coordinates or a Web-service route ID into this navigation session.
 export class NativeNavigation {
   private generation: number = 0;
   private laneSession: LaneLookAheadSession | undefined = undefined;
+  private lanePanel: NavigationPanel | undefined = undefined;
 
   cancelPending(): void {
     this.generation += 1;
     this.laneSession?.dispose();
     this.laneSession = undefined;
+    this.lanePanel?.hide();
+    this.lanePanel = undefined;
   }
 
   async open(context: common.UIAbilityContext, key: string, destination: Place,
-    onStatus: (message: string) => void, lanePanel?: () => void): Promise<void> {
+    onStatus: (message: string) => void, lanePanel?: NavigationPanel): Promise<void> {
     if (!/^[a-fA-F0-9]{32}$/.test(key.trim())) {
       throw new Error('请填写 32 位高德鸿蒙导航 Key');
     }
@@ -57,11 +65,17 @@ export class NativeNavigation {
       navi.setUseInnerVoice(true);
       this.laneSession?.dispose();
       this.laneSession = undefined;
+      this.lanePanel?.hide();
+      this.lanePanel = undefined;
       let laneSession: LaneLookAheadSession | undefined = undefined;
       let exited: boolean = false;
       const closeLaneSession = (): void => {
         laneSession?.dispose();
-        if (this.laneSession === laneSession) { this.laneSession = undefined; }
+        if (this.laneSession === laneSession) {
+          this.laneSession = undefined;
+          this.lanePanel?.hide();
+          this.lanePanel = undefined;
+        }
         laneSession = undefined;
       };
       const coordinates: string[] = destination.location.split(',');
@@ -74,7 +88,6 @@ export class NativeNavigation {
       params.setUseInnerVoice(true);
       params.setNeedCalculateRouteWhenPresent(true);
       params.setNeedDestroyDriveManagerInstanceWhenNaviExit(true);
-      if (lanePanel) { params.setCustomAboveToBottomComponent(lanePanel); }
       AmapNaviPage.getInstance().showRoutePage(params, {
         onInitNaviFailure: () => {
           closeLaneSession();
@@ -98,6 +111,11 @@ export class NativeNavigation {
           laneSession = new LaneLookAheadSession(navi, context.filesDir);
           this.laneSession = laneSession;
           laneSession.start();
+          this.lanePanel = lanePanel;
+          try { lanePanel?.show(); } catch {
+            onStatus('实时导航已开始，前方车道面板暂不可用');
+            return;
+          }
           onStatus('实时导航已开始');
         },
         onArriveDestination: (simulated: boolean) => {
@@ -121,6 +139,8 @@ export class NativeNavigation {
     } catch {
       this.laneSession?.dispose();
       this.laneSession = undefined;
+      this.lanePanel?.hide();
+      this.lanePanel = undefined;
       throw new Error('无法打开导航，请检查鸿蒙导航 Key 或稍后重试');
     }
   }

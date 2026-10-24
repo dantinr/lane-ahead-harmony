@@ -1,8 +1,45 @@
 import { LanePreviewState, PreviewLane, PreviewRow } from '../navigation/LanePreview';
+import { ComponentContent, UIContext } from '@kit.ArkUI';
+import { NavigationPanel } from '../navigation/NativeNavigation';
+
+// Mount above navigation pages, independent of the SDK's clipped custom slots.
+// Only the panel receives touch events; the map and navigation controls remain usable.
+export class LanePanelOverlay implements NavigationPanel {
+  private context: UIContext;
+  private content: ComponentContent<Object> | undefined = undefined;
+
+  constructor(context: UIContext) { this.context = context; }
+
+  show(): void {
+    if (this.content) { return; }
+    this.context.runScopedTask(() => {
+      const content = new ComponentContent<Object>(this.context, wrapBuilder(laneLookAheadBuilder));
+      this.content = content;
+      try { this.context.getOverlayManager().addComponentContent(content); } catch {
+        this.content = undefined;
+        content.dispose();
+        throw new Error('无法显示前方车道');
+      }
+    });
+  }
+
+  hide(): void {
+    const content = this.content;
+    this.content = undefined;
+    if (!content) { return; }
+    try { this.context.getOverlayManager().removeComponentContent(content); } catch {
+      // The window or its overlay may already have been released.
+    } finally { content.dispose(); }
+  }
+}
 
 @Builder
 export function laneLookAheadBuilder() {
-  LaneLookAheadPanel()
+  // Keep the full-window touch surface on the builder's native Stack, rather
+  // than on a full-window custom-component wrapper that blocks the SDK below.
+  Stack({ alignContent: Alignment.TopEnd }) {
+    LaneLookAheadPanel().margin({ top: 146, right: 44 })
+  }.width('100%').height('100%').focusable(false).hitTestBehavior(HitTestMode.Transparent)
 }
 
 @Component
@@ -11,6 +48,11 @@ struct LaneLookAheadPanel {
   @StorageLink('laneAheadPreviewCount') count: number = 3;
   @StorageLink('laneAheadPanelExpanded') expanded: boolean = true;
   @StorageProp('laneAheadWindowWidth') windowWidth: number = 360;
+
+  private panelWidth(): number {
+    // Fit between the speed indicator and the traffic bar below the turn card.
+    return Math.max(200, Math.min(420, this.windowWidth - 132));
+  }
 
   private distance(meters: number): string {
     return meters >= 1000 ? (meters / 1000).toFixed(1) + ' km' : Math.ceil(meters) + ' m';
@@ -61,34 +103,28 @@ struct LaneLookAheadPanel {
   }
 
   build() {
-    // The SDK provides a narrow centered slot. Center our wider panel inside it
-    // so it remains within the window and above the SDK's full-route button.
-    Stack({ alignContent: Alignment.Bottom }) {
-      Column({ space: 2 }) {
-      Row({ space: 6 }) {
-        Text('前方车道').fontSize(14).fontWeight(FontWeight.Bold).fontColor('#F1F6F0').layoutWeight(1)
+    Column({ space: 2 }) {
+        Row({ space: 6 }) {
+          Text('前方车道').fontSize(14).fontWeight(FontWeight.Bold).fontColor('#F1F6F0').layoutWeight(1)
+          if (this.expanded) {
+            Button(this.count + ' 个').height(26).fontSize(11).backgroundColor('#2D4837').fontColor('#B5F489')
+              .onClick(() => { this.count = this.count === 3 ? 2 : 3; })
+          }
+          Button(this.expanded ? '收起' : '展开').height(26).fontSize(11).backgroundColor('#2D4837').fontColor('#B5F489')
+            .onClick(() => { this.expanded = !this.expanded; })
+        }.width('100%')
         if (this.expanded) {
-          Button(this.count + ' 个').height(26).fontSize(11).backgroundColor('#2D4837').fontColor('#B5F489')
-            .onClick(() => { this.count = this.count === 3 ? 2 : 3; })
+          ForEach(this.preview.rows, (row: PreviewRow, index: number) => { this.point(row, index) },
+            (row: PreviewRow) => row.id + row.distance + row.source + row.recordedAt + JSON.stringify(row.lanes))
+          if (this.preview.liveLanes.length > 0) {
+            Text('当前实时车道 · 未关联引导点').fontSize(10).fontColor('#B7C8BA').width('100%')
+            this.laneStrip(this.preview.liveLanes, false)
+          }
+          Text(this.preview.status).fontSize(10).fontColor('#B7C8BA').width('100%')
+          if (this.preview.rows.some((row: PreviewRow) => row.source === '历史参考')) {
+            Text('历史观测 7 天内有效，仅供参考，以现场标线为准').fontSize(10).fontColor('#FFD58A').width('100%')
+          }
         }
-        Button(this.expanded ? '收起' : '展开').height(26).fontSize(11).backgroundColor('#2D4837').fontColor('#B5F489')
-          .onClick(() => { this.expanded = !this.expanded; })
-      }.width('100%')
-      if (this.expanded) {
-        ForEach(this.preview.rows, (row: PreviewRow, index: number) => { this.point(row, index) },
-          (row: PreviewRow) => row.id + row.distance + row.source + row.recordedAt + JSON.stringify(row.lanes))
-        if (this.preview.liveLanes.length > 0) {
-          Text('当前实时车道 · 未关联引导点').fontSize(10).fontColor('#B7C8BA').width('100%')
-          this.laneStrip(this.preview.liveLanes, false)
-        }
-        Text(this.preview.status).fontSize(10).fontColor('#B7C8BA').width('100%')
-        if (this.preview.rows.some((row: PreviewRow) => row.source === '历史参考')) {
-          Text('历史观测 7 天内有效，仅供参考，以现场标线为准').fontSize(10).fontColor('#FFD58A').width('100%')
-        }
-      }
-      }.width(this.expanded ? Math.max(200, Math.min(420, this.windowWidth - 24)) : 208)
-        .padding(10).borderRadius(12).backgroundColor('#F2142B22')
-        .margin({ bottom: this.expanded ? 56 : 6 })
-    }.width('100%')
+    }.width(this.panelWidth()).padding(10).borderRadius(12).backgroundColor('#F2142B22')
   }
 }

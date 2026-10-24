@@ -13,7 +13,6 @@ function setup(options = {}) {
   const params = {
     setNaviMode(mode) { this.mode = mode; },
     setUseInnerVoice(voice) { this.voice = voice; },
-    setCustomAboveToBottomComponent(builder) { this.builder = builder; },
     setNeedCalculateRouteWhenPresent(enabled) { this.calculate = enabled; },
     setNeedDestroyDriveManagerInstanceWhenNaviExit(enabled) { this.destroyOnExit = enabled; }
   };
@@ -120,13 +119,17 @@ test('误进入模拟导航时停止并退出，不能显示实时导航成功',
 
 test('退出导航关闭整组地图页面，旧回调不能重启；首页重新进入创建新会话', async () => {
   const sdk = setup();
-  const builder = () => {};
-  await sdk.navigation.open(context, key, destination, () => {}, builder);
-  assert.equal(sdk.config.builder, builder);
+  const panelEvents = [];
+  const panel = { show() { panelEvents.push('show'); }, hide() { panelEvents.push('hide'); } };
+  await sdk.navigation.open(context, key, destination, () => {}, panel);
+  assert.deepEqual(panelEvents, []);
   sdk.callback.onStartNavi(0);
+  assert.deepEqual(panelEvents, ['show']);
   sdk.callback.onExitPage(1);
+  assert.deepEqual(panelEvents, ['show','hide']);
   assert.deepEqual(sdk.laneEvents, ['start','dispose']);
   assert.equal(sdk.calls.filter(call => call === 'exit').length,1);
+  assert.deepEqual(panelEvents, ['show','hide']);
   const oldCallback = sdk.callback;
   oldCallback.onStartNavi(0);
   oldCallback.onExitPage(0);

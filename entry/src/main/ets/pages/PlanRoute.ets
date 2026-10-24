@@ -2,7 +2,7 @@ import { AMapRouteService, Place, PlannedRoute, PlanningStep } from '../navigati
 import { HttpRouteTransport } from '../navigation/HttpRouteTransport';
 import { common } from '@kit.AbilityKit';
 import { NativeNavigation } from '../navigation/NativeNavigation';
-import { laneLookAheadBuilder } from '../components/LaneLookAheadPanel';
+import { LanePanelOverlay } from '../components/LaneLookAheadPanel';
 import { loadMapConfiguration } from '../navigation/MapConfiguration';
 
 @Entry
@@ -147,7 +147,7 @@ struct PlanRoute {
       const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
       this.message = '正在获取当前位置并打开导航地图…';
       await this.nativeNavigation.open(context, key, destination,
-        (message: string) => { this.message = message; }, laneLookAheadBuilder);
+        (message: string) => { this.message = message; }, new LanePanelOverlay(this.getUIContext()));
     } catch (error) {
       this.message = (error as Error).message || '无法打开导航，请重试';
     } finally {

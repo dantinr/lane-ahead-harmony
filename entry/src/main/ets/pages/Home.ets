@@ -5,7 +5,7 @@ import { loadMapConfiguration } from '../navigation/MapConfiguration';
 import { AMapRouteService, Place } from '../navigation/RoutePlanning';
 import { HttpRouteTransport } from '../navigation/HttpRouteTransport';
 import { NativeNavigation } from '../navigation/NativeNavigation';
-import { laneLookAheadBuilder } from '../components/LaneLookAheadPanel';
+import { LanePanelOverlay } from '../components/LaneLookAheadPanel';
 import { LaneHistoryStore } from '../navigation/LaneHistoryStore';
 
 PersistentStorage.persistProp('laneAheadLocationConsent', false);
@@ -161,7 +161,7 @@ struct Home {
     this.starting = true;
     try {
       await this.navigation.open(this.context(), this.harmonyKey, destination,
-        (status: string) => { this.message = status; }, laneLookAheadBuilder);
+        (status: string) => { this.message = status; }, new LanePanelOverlay(this.getUIContext()));
     } catch (error) {
       this.message = (error as Error).message || '无法打开导航，请重试';
     } finally {
