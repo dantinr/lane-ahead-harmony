@@ -6,6 +6,7 @@ artifacts/preview-stage/
 local.properties
 .idea/
 .local/
+entry/src/main/resources/rawfile/map-keys.json
 artifacts/*.hap
 artifacts/*.log
 artifacts/device-*.json

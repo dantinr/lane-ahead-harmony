@@ -9,16 +9,17 @@ if (!tsPath) throw new Error('请设置 LANEAHEAD_TYPESCRIPT，或通过 scripts
 const ts = require(tsPath);
 const sourceDir = path.join(__dirname, '../entry/src/main/ets/navigation');
 const cache = new Map();
-function load(name) {
-  if (cache.has(name)) return cache.get(name);
+function load(name, overrides) {
+  if (!overrides && cache.has(name)) return cache.get(name);
   const filename = path.join(sourceDir, name + '.ets');
   const js = ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 }
   }).outputText;
   const mod = { exports: {} };
   vm.runInThisContext('(function(require, module, exports) {' + js + '\n})', { filename })(
-    (ref) => load(ref.replace('./', '')), mod, mod.exports);
-  cache.set(name, mod.exports);
+    (ref) => overrides && Object.hasOwn(overrides, ref) ? overrides[ref] : load(ref.replace('./', '')),
+    mod, mod.exports);
+  if (!overrides) cache.set(name, mod.exports);
   return mod.exports;
 }
 module.exports = load;

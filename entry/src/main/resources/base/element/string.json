@@ -1,3 +1,6 @@
 {
-  "string": [{ "name": "module_desc", "value": "未来三个路口的车道预览" }]
+  "string": [
+    { "name": "module_desc", "value": "未来三个路口的车道预览" },
+    { "name": "location_reason", "value": "用于从当前位置规划路线并提供实时驾车导航" }
+  ]
 }

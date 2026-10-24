@@ -1,10 +1,17 @@
 import { AMapRouteService, Place, PlannedRoute, PlanningStep } from '../navigation/RoutePlanning';
 import { HttpRouteTransport } from '../navigation/HttpRouteTransport';
+import { common } from '@kit.AbilityKit';
+import { NativeNavigation } from '../navigation/NativeNavigation';
+import { loadMapConfiguration } from '../navigation/MapConfiguration';
 
 @Entry
 @Component
 struct PlanRoute {
   @State apiKey: string = '';
+  @State navigationKey: string = '';
+  @State navigationStarting: boolean = false;
+  @State navigationPrivacyAgreed: boolean = false;
+  @State navigationPrivacyVisible: boolean = false;
   @State city: string = '';
   @State originText: string = '';
   @State destinationText: string = '';
@@ -20,10 +27,19 @@ struct PlanRoute {
   @StorageLink('laneAheadForeground') @Watch('foregroundChanged') foreground: boolean = true;
   private revision: number = 0;
   private transport: HttpRouteTransport = new HttpRouteTransport();
+  private nativeNavigation: NativeNavigation = new NativeNavigation();
+
+  aboutToAppear(): void {
+    const config = loadMapConfiguration(this.getUIContext().getHostContext() as common.UIAbilityContext);
+    this.apiKey = config.webKey;
+    this.navigationKey = config.harmonyKey;
+  }
 
   aboutToDisappear(): void {
     this.cancelRequests();
     this.apiKey = '';
+    this.navigationKey = '';
+    this.nativeNavigation.cancelPending();
   }
 
   onPageHide(): void {
@@ -46,6 +62,8 @@ struct PlanRoute {
   }
 
   private invalidate(resetOrigin: boolean, resetDestination: boolean): void {
+    this.navigationPrivacyVisible = false;
+    this.nativeNavigation.cancelPending();
     this.cancelRequests();
     if (resetOrigin) {
       this.origin = undefined;
@@ -95,6 +113,45 @@ struct PlanRoute {
     }
     this.results = [];
     this.message = '';
+  }
+
+  private async openNavigationPrivacy(): Promise<void> {
+    const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
+    try {
+      await context.startAbility({ action: 'ohos.want.action.viewData',
+        uri: 'https://lbs.amap.com/pages/privacy/' });
+    } catch {
+      this.message = '无法打开隐私政策，请访问 https://lbs.amap.com/pages/privacy/';
+    }
+  }
+
+  private async startCurrentNavigation(): Promise<void> {
+    const destination = this.destination;
+    const key: string = this.navigationKey.trim();
+    if (destination === undefined || this.navigationStarting) {
+      return;
+    }
+    this.getUIContext().getFocusController().clearFocus();
+    if (!/^[a-fA-F0-9]{32}$/.test(key)) {
+      this.message = '请先填写高德鸿蒙导航 Key，再开始导航';
+      return;
+    }
+    if (!this.navigationPrivacyAgreed) {
+      this.navigationPrivacyVisible = true;
+      return;
+    }
+    this.navigationPrivacyVisible = false;
+    this.navigationStarting = true;
+    try {
+      const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
+      this.message = '正在获取当前位置并打开导航地图…';
+      await this.nativeNavigation.open(context, key, destination,
+        (message: string) => { this.message = message; });
+    } catch (error) {
+      this.message = (error as Error).message || '无法打开导航，请重试';
+    } finally {
+      this.navigationStarting = false;
+    }
   }
 
   private async plan(): Promise<void> {
@@ -166,7 +223,7 @@ struct PlanRoute {
             this.invalidate(isOrigin, !isOrigin);
           })
         Button('搜索').height(38).fontSize(13).fontColor('#B5F489').backgroundColor('#294635')
-          .enabled(!this.busy)
+          .enabled(!this.busy && !this.navigationStarting)
           .onClick(() => { this.search(isOrigin); })
       }.width('100%')
       if ((isOrigin ? this.origin : this.destination) !== undefined) {
@@ -174,6 +231,16 @@ struct PlanRoute {
           (isOrigin ? this.origin?.name : this.destination?.name) + ' · ' +
           (isOrigin ? this.origin?.address : this.destination?.address))
           .fontSize(12).fontColor('#B5F489').width('100%')
+      }
+      if (this.choosingOrigin === isOrigin) {
+        ForEach(this.results, (place: Place) => {
+          Column({ space: 5 }) {
+            Text(place.name).fontSize(16).fontColor('#F0F5EF').width('100%')
+            Text(place.address || '暂无详细地址').fontSize(12).fontColor('#A4BBAA').width('100%')
+          }.width('100%').padding(13).backgroundColor('#1D352B').borderRadius(12)
+            .onClick(() => this.choose(place))
+            .accessibilityText('选择' + (isOrigin ? '起点' : '终点') + place.name + place.address)
+        }, (place: Place) => place.id + '-' + place.location)
       }
     }.width('100%')
   }
@@ -211,7 +278,7 @@ struct PlanRoute {
       Row() {
         Column({ space: 3 }) {
           Text('LaneAhead').fontSize(27).fontWeight(FontWeight.Bold).fontColor('#F0F5EF')
-          Text('选路线，提前了解怎么走').fontSize(12).fontColor('#A8C0AF')
+          Text('当前位置出发，驾车导航').fontSize(12).fontColor('#A8C0AF')
         }.alignItems(HorizontalAlign.Start).layoutWeight(1)
         Button('车道演示').height(32).fontSize(12).fontColor('#B5F489').backgroundColor('#263F2E')
           .onClick(() => { this.getUIContext().getRouter().pushUrl({ url: 'pages/Index' }); })
@@ -224,31 +291,58 @@ struct PlanRoute {
               .type(InputType.Password).fontSize(14).fontColor('#F0F5EF').placeholderColor('#9FB5A8')
               .backgroundColor('#1D352B')
               .onChange((value: string) => { this.apiKey = value; this.invalidate(true, true); })
-            Text('Key 仅用于向高德请求服务，本页不保存。请使用 Web 服务类型的 Key。')
+            TextInput({ placeholder: '高德鸿蒙导航 Key', text: this.navigationKey })
+              .type(InputType.Password).fontSize(14).fontColor('#F0F5EF').placeholderColor('#9FB5A8')
+              .backgroundColor('#1D352B')
+              .onChange((value: string) => {
+                if (value !== this.navigationKey) {
+                  this.navigationKey = value;
+                  this.nativeNavigation.cancelPending();
+                }
+              })
+            Text('Web Key 用于地点搜索，鸿蒙 Key 用于导航。Key 仅保存在当前页面内存。')
               .fontSize(11).fontColor('#A4BBAA').width('100%')
             TextInput({ placeholder: '城市，例如：上海', text: this.city })
               .fontSize(14).fontColor('#F0F5EF').placeholderColor('#9FB5A8').backgroundColor('#1D352B')
               .onChange((value: string) => { this.city = value; this.invalidate(true, true); })
-            this.placeInput(true)
             this.placeInput(false)
+            Button(this.navigationStarting ? '正在打开导航…' : '从当前位置开始导航')
+              .width('100%').height(44).fontSize(15).fontColor('#132019').backgroundColor('#B5F489')
+              .enabled(!this.busy && !this.navigationStarting && this.destination !== undefined)
+              .onClick(() => { this.startCurrentNavigation(); })
+            if (this.navigationPrivacyVisible) {
+              Column({ space: 10 }) {
+                Text('定位与导航服务').fontSize(16).fontWeight(FontWeight.Bold).fontColor('#F0F5EF').width('100%')
+                Text('导航使用高德定位与导航 SDK，会处理您的位置、设备及网络信息，用于地图、路线和语音引导。请阅读高德隐私政策，同意后将申请精确位置权限。')
+                  .fontSize(13).fontColor('#D6E2D7').width('100%')
+                Text('阅读高德隐私政策').fontSize(13).fontColor('#B5F489').width('100%')
+                  .onClick(() => { this.openNavigationPrivacy(); })
+                Row({ space: 10 }) {
+                  Button('暂不使用').layoutWeight(1).height(40).fontColor('#D6E2D7').backgroundColor('#294635')
+                    .onClick(() => { this.navigationPrivacyVisible = false; })
+                  Button('同意并继续').layoutWeight(1).height(40).fontColor('#132019').backgroundColor('#B5F489')
+                    .onClick(() => {
+                      this.navigationPrivacyAgreed = true;
+                      this.startCurrentNavigation();
+                    })
+                }.width('100%')
+              }.width('100%').padding(12).backgroundColor('#263F2E').borderRadius(12)
+            }
+            Text('先搜索并选中终点，进入导航地图选路线，再点击开始导航。路线以导航地图中选择的方案为准。')
+              .fontSize(12).fontColor('#A4BBAA').width('100%')
+            Text('高德定位与导航隐私政策').fontSize(12).fontColor('#B5F489').width('100%')
+              .onClick(() => { this.openNavigationPrivacy(); })
+            Text('指定起点规划（可选）').fontSize(14).fontColor('#D6E2D7').width('100%')
+            this.placeInput(true)
             Button(this.busy ? '正在请求地图服务…' : '规划路线').width('100%').height(42).fontSize(15)
               .fontColor('#132019').backgroundColor('#B5F489')
-              .enabled(!this.busy && this.origin !== undefined && this.destination !== undefined)
+              .enabled(!this.busy && !this.navigationStarting && this.origin !== undefined && this.destination !== undefined)
               .onClick(() => { this.plan(); })
           }.width('100%').padding(14).backgroundColor('#142B22').borderRadius(16)
 
           if (this.message.length > 0) {
             Text(this.message).fontSize(13).fontColor('#E4CA92').width('100%')
           }
-          ForEach(this.results, (place: Place) => {
-            Column({ space: 5 }) {
-              Text(place.name).fontSize(16).fontColor('#F0F5EF').width('100%')
-              Text(place.address || '暂无详细地址').fontSize(12).fontColor('#A4BBAA').width('100%')
-            }.width('100%').padding(13).backgroundColor('#1D352B').borderRadius(12)
-              .onClick(() => this.choose(place))
-              .accessibilityText('选择' + (this.choosingOrigin ? '起点' : '终点') + place.name + place.address)
-          }, (place: Place) => place.id + '-' + place.location)
-
           ForEach(this.routes, (route: PlannedRoute, index: number) => {
             Column({ space: 7 }) {
               Text('方案 ' + (index + 1) + ' · ' + this.duration(route) + ' · ' + this.distance(route.distanceMeters))

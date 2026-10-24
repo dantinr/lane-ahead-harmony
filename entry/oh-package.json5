@@ -5,5 +5,12 @@
   "main": "",
   "author": "",
   "license": "",
-  "dependencies": {}
+  "dependencies": {
+    "@amap/amap_lbs_common": "11.2.1",
+    "@amap/amap_lbs_location": "11.2.1",
+    "@amap/amap_lbs_navi": "11.2.1",
+    "@amap/amap_lbs_map3d": "11.2.1"
+  },
+  "devDependencies": {},
+  "dynamicDependencies": {}
 }
