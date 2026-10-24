@@ -217,6 +217,7 @@ struct Home {
           Column({ space: 10 }) {
             Text(this.webKey && this.harmonyKey ? '地图服务已默认配置' : '请配置地图服务 Key')
               .fontColor('#B7C8BA').fontSize(13).width('100%')
+            Button('车道采集诊断').onClick(() => { this.getUIContext().getRouter().pushUrl({ url: 'pages/LaneDiagnostics' }); })
             TextInput({ placeholder: '高德 Web 服务 Key', text: this.webKey }).type(InputType.Password)
               .fontColor('#F0F5EF').placeholderColor('#9FB5A8').backgroundColor('#1D352B')
               .onChange((value: string) => { if (value !== this.webKey) { this.webKey = value; this.clearDestination(); } })

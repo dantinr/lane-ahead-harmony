@@ -6,7 +6,8 @@ const stored = new Map();
 global.AppStorage = { get: key => stored.get(key), setOrCreate: (key,value) => stored.set(key,value) };
 const lanes = [new PreviewLane(['←'], ['←'])];
 function setup() {
-  const state = { added: 0, removed: 0, saves: 0 };
+  stored.clear();
+  const state = { added: 0, removed: 0, saves: 0, diagnosticSaves: 0, failHistory: false, failDiagnostics: false };
   const path = id => ({ getPathid: () => BigInt(id) });
   state.path = path(123);
   state.paths = new Map([[12,state.path]]);
@@ -18,7 +19,18 @@ function setup() {
   const { LaneLookAheadSession } = load('LaneLookAheadSession', {
     './LaneHistoryStore': { LaneHistoryStore: class {
       load() { return new LaneHistory(); }
-      save(history) { state.history = history.serialize(); state.saves++; return true; }
+      save(history) {
+        state.saves++;
+        if (state.failHistory) return false;
+        state.history = history.serialize(); return true;
+      }
+    } },
+    './LaneCollectionStore': { LaneCollectionStore: class {
+      save(summary) {
+        state.diagnosticSaves++;
+        if (state.failDiagnostics) return false;
+        state.diagnostic = structuredClone(summary); return true;
+      }
     } },
     './LaneSdkData': {
       decodeLanes: info => info ? lanes : [],
@@ -31,6 +43,7 @@ function setup() {
     pathID: 12, mType: 1, mCurSegIndex: 0, mSegRemainDis: 50, ...overrides
   });
   state.preview = () => stored.get('laneAheadLanePreview');
+  state.collection = () => stored.get('laneAheadCollection');
   state.pathFactory = path;
   return state;
 }
@@ -53,6 +66,88 @@ test('只采集选定路线 GPS 导航；连续通过后持久化；退出移除
   assert.equal(state.preview().rows.length, 0);
   state.session.dispose();
   assert.equal(state.removed, 1);
+});
+
+test('导航期间显示采集流程并在结束后保留计数与原因，忽略晚到回调', () => {
+  const state = setup();
+  try {
+    state.session.start(); state.info();
+    assert.equal(state.collection().received, 0);
+    assert.match(state.collection().reason, /尚未返回/);
+    state.listener.showLaneInfo({});
+    assert.equal(state.collection().received, 1);
+    assert.equal(state.collection().decoded, 1);
+    assert.equal(state.collection().status, '待通过确认');
+    assert.equal(state.collection().writes, 0);
+    state.info({mCurSegIndex:1,mSegRemainDis:490});
+    assert.equal(state.collection().confirmed, 1);
+    assert.equal(state.collection().writes, 1);
+    assert.equal(state.collection().storedCount, 1);
+    assert.equal(state.collection().status, '保存成功');
+    state.info({mCurSegIndex:1,mSegRemainDis:50});
+    state.listener.showLaneInfo({}); state.listener.hideLaneInfo();
+    state.session.stop('已到达目的地');
+    assert.match(state.diagnostic.reasons.map(r => r.message).join(), /高德已.*隐藏/);
+    assert.match(state.diagnostic.lastNotSaved, /高德已.*隐藏/);
+    assert.equal(state.diagnostic.status, '采集已结束');
+    const final = JSON.stringify(state.diagnostic);
+    state.listener.showLaneInfo({}); state.listener.hideLaneInfo(); state.listener.onGpsSignalWeak(true);
+    assert.equal(JSON.stringify(state.diagnostic), final);
+    assert.ok(state.diagnostic.endedAt > 0);
+  } finally { state.session.dispose(); }
+});
+
+test('另一类多组车道回调单独计数，不能被误报为从未收到或历史写入成功', () => {
+  const state = setup();
+  try {
+    state.session.start(); state.info();
+    state.listener.showLaneInfoWithBytes([], null, null);
+    assert.equal(state.collection().received, 1);
+    assert.equal(state.collection().alternate, 1);
+    assert.equal(state.collection().decoded, 0);
+    assert.match(state.collection().lastNotSaved, /多组车道回调/);
+    assert.equal(state.collection().writes, 0);
+    state.session.stop('导航已结束');
+    assert.equal(state.diagnostic.alternate, 1);
+  } finally { state.session.dispose(); }
+});
+
+test('写入失败不能报告保存成功，重试成功后清除错误并落盘诊断', () => {
+  const state = setup();
+  try {
+    state.session.start(); state.info(); state.listener.showLaneInfo({});
+    state.failHistory = true;
+    state.info({mCurSegIndex:1,mSegRemainDis:490});
+    assert.equal(state.collection().confirmed, 1);
+    assert.equal(state.collection().writes, 0);
+    assert.equal(state.collection().status, '保存失败');
+    assert.match(state.collection().historyWriteError, /写入本机失败/);
+    state.failHistory = false;
+    state.info({mCurSegIndex:1,mSegRemainDis:480});
+    assert.equal(state.collection().writes, 1);
+    assert.equal(state.collection().historyWriteError, '');
+    assert.equal(state.diagnostic.writes, 1);
+  } finally { state.session.dispose(); }
+});
+
+test('诊断写入节流，退出强制保存，诊断失败不影响导航及历史写入', () => {
+  const state = setup();
+  try {
+    state.failDiagnostics = true;
+    state.session.start();
+    assert.match(stored.get('laneAheadCollectionPersistenceError'), /诊断写入失败/);
+    const initial = state.diagnosticSaves;
+    state.info(); state.listener.showLaneInfo({});
+    assert.equal(state.diagnosticSaves, initial);
+    state.info({mCurSegIndex:1,mSegRemainDis:490});
+    assert.equal(state.collection().writes, 1);
+    assert.equal(JSON.parse(state.history).records.length, 1);
+    state.failDiagnostics = false;
+    state.session.stop('导航已结束');
+    assert.equal(stored.get('laneAheadCollectionPersistenceError'), '');
+    assert.equal(state.diagnostic.confirmed, 1);
+    assert.equal(state.diagnostic.status, '采集已结束');
+  } finally { state.session.dispose(); }
 });
 test('偏航重算、弱信号和模拟信息清空车道，等待新路线或定位后再恢复', () => {
   const state = setup();

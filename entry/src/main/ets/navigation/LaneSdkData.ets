@@ -105,7 +105,12 @@ export function routePoints(path: AMapNaviPath): PreviewPoint[] {
       nextCoords.length >= 2 && terminalCoords !== null && terminalCoords !== undefined &&
       terminalCoords.length >= 2 && coordinate(terminalCoords[terminalCoords.length - 1]) ===
       coordinate(coords[coords.length - 1]);
-    points.push(new PreviewPoint(i, end, incoming + ' → ' + outgoing, maneuver(step.getIconType()), key, eligible));
+    const reason = step.getTrafficLightCount() > 1 ? '本路段包含多个信号灯，无法确定车道对应路口' :
+      step.getTrafficLightCount() === 0 ? '本路段未标注信号灯，不满足路口关联条件' :
+      !next ? '当前为终点路段，缺少驶出道路用于匹配' :
+      terminal?.getTrafficLights() !== true ? '信号灯不在路段末端，无法关联路口' :
+      '路口进出道路几何不足或末端不匹配，无法关联车道';
+    points.push(new PreviewPoint(i, end, incoming + ' → ' + outgoing, maneuver(step.getIconType()), key, eligible, reason));
   }
   return points;
 }

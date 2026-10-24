@@ -1,6 +1,7 @@
 import { LanePreviewState, PreviewLane, PreviewRow } from '../navigation/LanePreview';
 import { ComponentContent, UIContext } from '@kit.ArkUI';
 import { NavigationPanel } from '../navigation/NativeNavigation';
+import { LaneCollectionState } from '../navigation/LaneCollection';
 
 // Mount above navigation pages, independent of the SDK's clipped custom slots.
 // Only the panel receives touch events; the map and navigation controls remain usable.
@@ -48,6 +49,8 @@ struct LaneLookAheadPanel {
   @StorageLink('laneAheadPreviewCount') count: number = 3;
   @StorageLink('laneAheadPanelExpanded') expanded: boolean = true;
   @StorageProp('laneAheadWindowWidth') windowWidth: number = 360;
+  @StorageLink('laneAheadCollection') collection: LaneCollectionState = new LaneCollectionState();
+  @StorageLink('laneAheadCollectionPersistenceError') diagnosticError: string = '';
 
   private panelWidth(): number {
     // Fit between the speed indicator and the traffic bar below the turn card.
@@ -121,6 +124,15 @@ struct LaneLookAheadPanel {
             this.laneStrip(this.preview.liveLanes, false)
           }
           Text(this.preview.status).fontSize(10).fontColor('#B7C8BA').width('100%')
+          Text(this.collection.status + ' · 写入 ' + this.collection.writes + ' 次')
+            .fontSize(11).fontColor(this.collection.historyWriteError ? '#FFD58A' : '#B5F489').width('100%')
+          if (this.collection.historyWriteError || this.collection.reason !== this.preview.status) {
+            Text(this.collection.historyWriteError || this.collection.reason).fontSize(10).fontColor('#D1D9CF')
+              .width('100%').maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis })
+          }
+          if (this.diagnosticError) {
+            Text(this.diagnosticError).fontSize(10).fontColor('#FFD58A').width('100%')
+          }
           if (this.preview.rows.some((row: PreviewRow) => row.source === '历史参考')) {
             Text('历史观测 7 天内有效，仅供参考，以现场标线为准').fontSize(10).fontColor('#FFD58A').width('100%')
           }
