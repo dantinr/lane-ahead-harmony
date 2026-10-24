@@ -4,15 +4,16 @@ const load = require('./load-ets.cjs');
 const { Place } = load('RoutePlanning');
 const destination = new Place('hospital', '测试终点', '公共地点', '116.277358,39.904898');
 const key = 'a'.repeat(32);
-const context = { getApplicationContext: () => 'application-context' };
+const context = { filesDir: '/private/files', getApplicationContext: () => 'application-context' };
 
 function setup(options = {}) {
   const calls = [];
   const statuses = [];
-  const sdk = { calls, statuses };
+  const sdk = { calls, statuses, laneEvents: [] };
   const params = {
     setNaviMode(mode) { this.mode = mode; },
     setUseInnerVoice(voice) { this.voice = voice; },
+    setCustomAboveToBottomComponent(builder) { this.builder = builder; },
     setNeedCalculateRouteWhenPresent(enabled) { this.calculate = enabled; },
     setNeedDestroyDriveManagerInstanceWhenNaviExit(enabled) { this.destroyOnExit = enabled; }
   };
@@ -21,6 +22,13 @@ function setup(options = {}) {
     exitRoutePage() { calls.push('exit'); }
   };
   const { NativeNavigation } = load('NativeNavigation', {
+    './LaneLookAheadSession': { LaneLookAheadSession: class {
+      constructor(_, filesDir) { sdk.filesDir = filesDir; }
+      start() { sdk.laneEvents.push('start'); }
+      stop() { sdk.laneEvents.push('stop'); }
+      replan() { sdk.laneEvents.push('replan'); }
+      dispose() { sdk.laneEvents.push('dispose'); }
+    } },
     '@kit.AbilityKit': { abilityAccessCtrl: { createAtManager: () => ({
       requestPermissionsFromUser: async (_, permissions) => {
         calls.push('permission');
@@ -48,6 +56,7 @@ function setup(options = {}) {
       NaviLatLng: class { constructor(latitude, longitude) { Object.assign(this, { latitude, longitude }); } },
       NaviPoi: class { constructor(name, coordinate, poiId) { Object.assign(this, { name, coordinate, poiId }); } },
       NaviType: { GPS: 0, EMULATOR: 1 },
+      AMapPageType: { NAVI: 1, ROUTE: 0 },
       AmapNaviParams: { buildForEnd(end) { params.end = end; return params; } },
       AmapNaviPage: { getInstance: () => page }
     }
@@ -96,6 +105,8 @@ test('真实导航使用当前位置和正确的经纬度顺序，开启语音�
   assert.deepEqual(sdk.statuses, []);
   sdk.callback.onStartNavi(0);
   assert.deepEqual(sdk.statuses, ['实时导航已开始']);
+  assert.equal(sdk.filesDir, '/private/files');
+  assert.deepEqual(sdk.laneEvents, ['start']);
 });
 
 test('误进入模拟导航时停止并退出，不能显示实时导航成功', async () => {
@@ -104,6 +115,27 @@ test('误进入模拟导航时停止并退出，不能显示实时导航成功',
   sdk.callback.onStartNavi(1);
   assert.deepEqual(sdk.calls.slice(-2), ['stop', 'exit']);
   assert.ok(!sdk.statuses.includes('实时导航已开始'));
+  assert.deepEqual(sdk.laneEvents, []);
+});
+
+test('退出导航关闭整组地图页面，旧回调不能重启；首页重新进入创建新会话', async () => {
+  const sdk = setup();
+  const builder = () => {};
+  await sdk.navigation.open(context, key, destination, () => {}, builder);
+  assert.equal(sdk.config.builder, builder);
+  sdk.callback.onStartNavi(0);
+  sdk.callback.onExitPage(1);
+  assert.deepEqual(sdk.laneEvents, ['start','dispose']);
+  assert.equal(sdk.calls.filter(call => call === 'exit').length,1);
+  const oldCallback = sdk.callback;
+  oldCallback.onStartNavi(0);
+  oldCallback.onExitPage(0);
+  assert.deepEqual(sdk.laneEvents, ['start','dispose']);
+  assert.equal(sdk.calls.filter(call => call === 'exit').length,1);
+  await sdk.open();
+  sdk.callback.onStartNavi(0);
+  sdk.callback.onExitPage(0);
+  assert.deepEqual(sdk.laneEvents, ['start','dispose','start','dispose']);
 });
 
 test('SDK 异常不能将原始内容或 Key 带入界面错误', async () => {

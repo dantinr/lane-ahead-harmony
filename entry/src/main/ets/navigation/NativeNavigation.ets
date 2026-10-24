@@ -2,21 +2,25 @@ import { abilityAccessCtrl, common, PermissionRequestResult } from '@kit.Ability
 import { geoLocationManager } from '@kit.LocationKit';
 import { AMapPrivacyAgreeStatus, AMapPrivacyInfoStatus, AMapPrivacyShowStatus } from '@amap/amap_lbs_common';
 import {
-  AMapNaviFactory, AmapNaviPage, AmapNaviParams, NaviLatLng, NaviPoi, NaviSetting, NaviType
+  AMapNaviFactory, AmapNaviPage, AmapNaviParams, AMapPageType, NaviLatLng, NaviPoi, NaviSetting, NaviType
 } from '@amap/amap_lbs_navi';
 import { Place } from './RoutePlanning';
+import { LaneLookAheadSession } from './LaneLookAheadSession';
 
 // The SDK obtains and map-matches the current position in GCJ-02. Do not pass
 // raw system GPS coordinates or a Web-service route ID into this navigation session.
 export class NativeNavigation {
   private generation: number = 0;
+  private laneSession: LaneLookAheadSession | undefined = undefined;
 
   cancelPending(): void {
     this.generation += 1;
+    this.laneSession?.dispose();
+    this.laneSession = undefined;
   }
 
   async open(context: common.UIAbilityContext, key: string, destination: Place,
-    onStatus: (message: string) => void): Promise<void> {
+    onStatus: (message: string) => void, lanePanel?: () => void): Promise<void> {
     if (!/^[a-fA-F0-9]{32}$/.test(key.trim())) {
       throw new Error('请填写 32 位高德鸿蒙导航 Key');
     }
@@ -51,6 +55,15 @@ export class NativeNavigation {
       NaviSetting.updatePrivacyAgree(AMapPrivacyAgreeStatus.DidAgree, context);
       const navi = AMapNaviFactory.getAMapNaviInstance(context.getApplicationContext(), key.trim());
       navi.setUseInnerVoice(true);
+      this.laneSession?.dispose();
+      this.laneSession = undefined;
+      let laneSession: LaneLookAheadSession | undefined = undefined;
+      let exited: boolean = false;
+      const closeLaneSession = (): void => {
+        laneSession?.dispose();
+        if (this.laneSession === laneSession) { this.laneSession = undefined; }
+        laneSession = undefined;
+      };
       const coordinates: string[] = destination.location.split(',');
       const end = new NaviPoi(destination.name,
         new NaviLatLng(Number(coordinates[1]), Number(coordinates[0])), destination.id || null);
@@ -61,30 +74,53 @@ export class NativeNavigation {
       params.setUseInnerVoice(true);
       params.setNeedCalculateRouteWhenPresent(true);
       params.setNeedDestroyDriveManagerInstanceWhenNaviExit(true);
+      if (lanePanel) { params.setCustomAboveToBottomComponent(lanePanel); }
       AmapNaviPage.getInstance().showRoutePage(params, {
         onInitNaviFailure: () => {
+          closeLaneSession();
           onStatus('导航初始化失败，请检查鸿蒙 Key 是否绑定当前签名的 AppID');
         },
         onCalculateRouteFailure: (code: number) => {
+          laneSession?.stop('路线规划失败，暂停车道提示');
           onStatus('导航路线规划失败（' + code + '），请检查网络、定位和导航服务权限');
         },
         onStartNavi: (type: NaviType) => {
+          if (exited) { return; }
           if (type !== NaviType.GPS) {
+            exited = true;
+            closeLaneSession();
             navi.stopNavi();
             AmapNaviPage.getInstance().exitRoutePage();
             onStatus('未能启动 GPS 导航，请重试');
             return;
           }
+          closeLaneSession();
+          laneSession = new LaneLookAheadSession(navi, context.filesDir);
+          this.laneSession = laneSession;
+          laneSession.start();
           onStatus('实时导航已开始');
         },
         onArriveDestination: (simulated: boolean) => {
           if (!simulated) {
+            laneSession?.stop('已到达目的地');
             onStatus('已到达目的地');
           }
         },
-        onExitPage: () => { onStatus('已退出导航地图，可重新选择终点'); }
+        onReCalculateRoute: () => { laneSession?.replan(); },
+        onExitPage: (pageType: AMapPageType) => {
+          if (exited) { return; }
+          exited = true;
+          closeLaneSession();
+          // The SDK can retain its route page after navigation exits, without
+          // repeating this page callback on the next start. Return to Home so a
+          // new navigation always obtains a fresh SDK instance and listeners.
+          if (pageType === AMapPageType.NAVI) { AmapNaviPage.getInstance().exitRoutePage(); }
+          onStatus('已退出导航地图，可重新选择终点');
+        }
       });
     } catch {
+      this.laneSession?.dispose();
+      this.laneSession = undefined;
       throw new Error('无法打开导航，请检查鸿蒙导航 Key 或稍后重试');
     }
   }

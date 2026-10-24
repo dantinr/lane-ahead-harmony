@@ -5,6 +5,8 @@ import { loadMapConfiguration } from '../navigation/MapConfiguration';
 import { AMapRouteService, Place } from '../navigation/RoutePlanning';
 import { HttpRouteTransport } from '../navigation/HttpRouteTransport';
 import { NativeNavigation } from '../navigation/NativeNavigation';
+import { laneLookAheadBuilder } from '../components/LaneLookAheadPanel';
+import { LaneHistoryStore } from '../navigation/LaneHistoryStore';
 
 PersistentStorage.persistProp('laneAheadLocationConsent', false);
 
@@ -159,7 +161,7 @@ struct Home {
     this.starting = true;
     try {
       await this.navigation.open(this.context(), this.harmonyKey, destination,
-        (status: string) => { this.message = status; });
+        (status: string) => { this.message = status; }, laneLookAheadBuilder);
     } catch (error) {
       this.message = (error as Error).message || '无法打开导航，请重试';
     } finally {
@@ -224,6 +226,12 @@ struct Home {
             Button('应用配置并定位').onClick(() => { this.settings = false; this.initializeLocation(); })
             Button('指定起点规划').onClick(() => { this.getUIContext().getRouter().pushUrl({ url: 'pages/PlanRoute' }); })
             Button('车道演示').onClick(() => { this.getUIContext().getRouter().pushUrl({ url: 'pages/Index' }); })
+            Text('导航页显示前方 2／3 个引导点。实际观测的车道仅保存在本机，历史参考保留 7 天。')
+              .fontSize(12).fontColor('#B7C8BA').width('100%')
+            Button('清除历史车道').onClick(() => {
+              this.message = new LaneHistoryStore(this.context().filesDir).clear() ? '历史车道已清除' : '清除失败，请重试';
+            })
+            if (this.message) { Text(this.message).fontSize(12).fontColor('#E4CA92').width('100%') }
             Text('高德隐私政策').fontColor('#B5F489').onClick(() => { this.privacy(); })
           }.padding(16).width('100%')
         }.width('100%').constraintSize({ maxHeight: 300 })
@@ -275,5 +283,9 @@ struct Home {
         }.width('100%').padding(16).backgroundColor('#142B22')
       }
     }.width('100%').height('100%').backgroundColor('#0B1B17')
+      .onAreaChange((_old: Area, area: Area) => {
+        const width = Number(area.width);
+        if (Number.isFinite(width) && width > 0) { AppStorage.setOrCreate('laneAheadWindowWidth', width); }
+      })
   }
 }
