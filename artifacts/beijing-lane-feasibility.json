@@ -1,0 +1,31 @@
+{
+  "checkedDate": "2026-10-24",
+  "provider": "OSRM public demo router / OpenStreetMap",
+  "coordinateSystem": "WGS-84",
+  "origin": {
+    "longitude": 116.462428,
+    "name": "北京望京地铁站附近",
+    "latitude": 39.996566
+  },
+  "destination": {
+    "longitude": 116.270633,
+    "name": "中国人民解放军总医院（301医院）复兴路院区",
+    "latitude": 39.903287
+  },
+  "endpointNote": "公开 POI 坐标附近的路网吸附位置，不代表医院或地铁的指定出入口。",
+  "requestUrl": "https://router.project-osrm.org/route/v1/driving/116.462428,39.996566;116.270633,39.903287?steps=true&alternatives=true&overview=full&geometries=geojson&annotations=distance",
+  "status": "Ok",
+  "routes": [
+    {
+      "distanceMeters": 25299.4,
+      "intersectionObjectCount": 88,
+      "intersectionObjectsWithLaneData": 0
+    },
+    {
+      "distanceMeters": 25794.7,
+      "intersectionObjectCount": 92,
+      "intersectionObjectsWithLaneData": 0
+    }
+  ],
+  "conclusion": "两个方案均未返回车道字段，不能据此生成真实多路口车道提示。intersectionObjectCount 是原始路网交叉点对象数，不是去重后的物理路口数。此结论仅针对本次响应。"
+}

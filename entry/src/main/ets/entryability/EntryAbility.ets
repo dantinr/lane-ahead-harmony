@@ -5,7 +5,7 @@ import { window } from '@kit.ArkUI';
 export default class EntryAbility extends UIAbility {
   onWindowStageCreate(windowStage: window.WindowStage): void {
     AppStorage.setOrCreate('laneAheadForeground', true);
-    windowStage.loadContent('pages/Index', (error) => {
+    windowStage.loadContent('pages/PlanRoute', (error) => {
       if (error.code) {
         hilog.error(0x0000, 'LaneAhead', '页面加载失败 %{public}s', JSON.stringify(error));
       }

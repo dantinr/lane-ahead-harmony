@@ -1,0 +1,180 @@
+{
+  "checkedAt": "2026-10-24T02:55:45.376Z",
+  "requests": [
+    {
+      "endpoint": "/v5/place/text",
+      "status": "1",
+      "code": "10000",
+      "elapsedMs": 251
+    },
+    {
+      "endpoint": "/v5/place/text",
+      "status": "1",
+      "code": "10000",
+      "elapsedMs": 128
+    },
+    {
+      "endpoint": "/v5/direction/driving",
+      "status": "1",
+      "code": "10000",
+      "elapsedMs": 128
+    }
+  ],
+  "keyFormatValid": true,
+  "originCandidates": [
+    {
+      "id": "BV10013356",
+      "name": "望京(地铁站)",
+      "address": "14号线;15号线",
+      "location": "116.469409,39.998521"
+    },
+    {
+      "id": "BV10845847",
+      "name": "地铁望京站(公交站)",
+      "address": "621路;855路;928路;专15路",
+      "location": "116.470832,39.999133"
+    },
+    {
+      "id": "BX10019305",
+      "name": "望京地铁站A西北口",
+      "address": "15号线",
+      "location": "116.469822,39.999073"
+    },
+    {
+      "id": "BV10013377",
+      "name": "望京西(地铁站)",
+      "address": "(在建)13B号线;13号线;15号线;17号线",
+      "location": "116.447987,39.994160"
+    },
+    {
+      "id": "BV10416591",
+      "name": "望京南(地铁站)",
+      "address": "14号线",
+      "location": "116.481880,39.984670"
+    },
+    {
+      "id": "BV10013402",
+      "name": "望京东(地铁站)",
+      "address": "15号线",
+      "location": "116.487032,40.003176"
+    },
+    {
+      "id": "BX10019306",
+      "name": "望京地铁站C东南口",
+      "address": "15号线",
+      "location": "116.468889,39.997871"
+    },
+    {
+      "id": "BV10417355",
+      "name": "地铁望京西站(公交站)",
+      "address": "547路;571路;851路;854路;专112路",
+      "location": "116.448135,39.995102"
+    },
+    {
+      "id": "BX10015125",
+      "name": "望京南地铁站C东南口",
+      "address": "14号线",
+      "location": "116.481266,39.983680"
+    },
+    {
+      "id": "BV11494459",
+      "name": "地铁望京南站(公交站)",
+      "address": "(停运)高铁专线6号线;404路;451路;593路;696路;921路;夜间接驳专线8路",
+      "location": "116.480415,39.986012"
+    }
+  ],
+  "destinationCandidates": [
+    {
+      "id": "B000A9DPJ4",
+      "name": "中国人民解放军总医院",
+      "address": "复兴路28号",
+      "location": "116.276578,39.904572"
+    },
+    {
+      "id": "B0LG7G0UWU",
+      "name": "解放军总医院第一医学中心",
+      "address": "复兴路28号",
+      "location": "116.277358,39.904898"
+    },
+    {
+      "id": "B000A8W0ML",
+      "name": "中国人民解放军总医院第四医学中心",
+      "address": "阜成路51号",
+      "location": "116.304460,39.925292"
+    },
+    {
+      "id": "B000A8VWCK",
+      "name": "中国人民解放军总医院第七医学中心",
+      "address": "东四十条南门仓胡同5号",
+      "location": "116.429131,39.930995"
+    },
+    {
+      "id": "B0FFL47CJC",
+      "name": "解放军总医院第九医学中心",
+      "address": "奥运村街道安翔北里9号",
+      "location": "116.378478,39.995300"
+    },
+    {
+      "id": "B0GUCZ3HTG",
+      "name": "中国人民解放军总医院第八医学中心第一住院部",
+      "address": "黑山扈甲17号",
+      "location": "116.263632,40.023526"
+    },
+    {
+      "id": "B0FFKPXF69",
+      "name": "中国人民解放军总医院第四医学中心门诊部",
+      "address": "阜成路51号院(中国人民解放军总医院第四医学中心)",
+      "location": "116.304529,39.924630"
+    },
+    {
+      "id": "B0FFGK14CK",
+      "name": "中国人民解放军总医院第四医学中心科学研究大楼",
+      "address": "阜成路51号中国人民解放军总医院第四医学中心",
+      "location": "116.303461,39.925507"
+    },
+    {
+      "id": "B0FFK6I65G",
+      "name": "中国人民解放军总医院第六医学中心健康体检中心",
+      "address": "阜成路6号海军总医院外科大楼一层",
+      "location": "116.324716,39.922676"
+    },
+    {
+      "id": "B0FFFAHVEF",
+      "name": "解放军总医院第四医学中心停车场",
+      "address": "阜成路51号中国人民解放军总医院第一附属医院内",
+      "location": "116.304731,39.924581"
+    }
+  ],
+  "selectedOrigin": {
+    "id": "BV10013356",
+    "name": "望京(地铁站)",
+    "address": "14号线;15号线",
+    "location": "116.469409,39.998521"
+  },
+  "selectedDestination": {
+    "id": "B0LG7G0UWU",
+    "name": "解放军总医院第一医学中心",
+    "address": "复兴路28号",
+    "location": "116.277358,39.904898"
+  },
+  "routes": [
+    {
+      "distanceMeters": 25581,
+      "durationSeconds": 3286,
+      "stepCount": 11,
+      "firstInstruction": "沿宏昌路辅路向西南行驶73米向左前方行驶进入主路"
+    },
+    {
+      "distanceMeters": 25998,
+      "durationSeconds": 3497,
+      "stepCount": 14,
+      "firstInstruction": "沿宏昌路辅路向西南行驶73米向左前方行驶进入主路"
+    },
+    {
+      "distanceMeters": 31351,
+      "durationSeconds": 4077,
+      "stepCount": 17,
+      "firstInstruction": "沿宏昌路辅路向西南行驶73米向左前方行驶进入主路"
+    }
+  ]
+}

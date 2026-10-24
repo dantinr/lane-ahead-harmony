@@ -5,6 +5,9 @@ oh_modules/
 artifacts/preview-stage/
 local.properties
 .idea/
+.local/
 artifacts/*.hap
 artifacts/*.log
+artifacts/device-*.json
+artifacts/device-*.png
 
