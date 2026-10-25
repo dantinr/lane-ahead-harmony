@@ -184,6 +184,56 @@ test('路线选择键与原生 ID 分别解析，另一条路线延迟回调不�
     assert.equal(state.preview().rows.length,0);
   } finally { state.session.dispose(); }
 });
+
+test('SDK 实际透传 bigint 或十进制字符串的原生 ID 时，精确匹配后可连续越点保存', () => {
+  const id = '9223372036854775701';
+  for (const pathID of [BigInt(id), id]) {
+    const state = setup();
+    state.path = state.pathFactory(id);
+    state.paths = new Map([[12, state.path]]);
+    try {
+      state.session.start(); state.info({pathID});
+      assert.equal(state.preview().rows.length, 2);
+      state.listener.showLaneInfo({});
+      state.info({pathID, mCurSegIndex:1, mSegRemainDis:490});
+      assert.equal(state.collection().confirmed, 1);
+      assert.equal(state.saves, 1);
+      state.session.stop('导航已结束');
+      const event = state.diagnostic.events.find(e => e.code === 'route_match');
+      assert.match(event.message, new RegExp(typeof pathID));
+      assert.equal(JSON.stringify(state.diagnostic).includes(id), false);
+    } finally { state.session.dispose(); }
+  }
+});
+
+test('bigint 和字符串选路键仍须通过路线映射，不能当作原生 ID 混用', () => {
+  for (const pathID of [12n, '12']) {
+    const state = setup();
+    try {
+      state.session.start(); state.info({pathID});
+      assert.equal(state.preview().rows.length, 2);
+      state.paths.set(13, state.pathFactory(999));
+      state.info({pathID: typeof pathID === 'bigint' ? 13n : '13'});
+      assert.equal(state.preview().rows.length, 0);
+      assert.equal(state.saves, 0);
+    } finally { state.session.dispose(); }
+  }
+});
+
+test('拒绝精度丢失、相邻大整数和无效路线标识，不能将数值近似当作同一路线', () => {
+  const id = '9223372036854775701';
+  for (const pathID of [Number(id), 9223372036854775702n, '9223372036854775702',
+    null, undefined, {}, '1e2', '012', -1, NaN, Infinity]) {
+    const state = setup();
+    state.path = state.pathFactory(id);
+    state.paths = new Map([[12, state.path]]);
+    try {
+      state.session.start(); state.info({pathID}); state.listener.showLaneInfo({});
+      assert.equal(state.preview().rows.length, 0);
+      assert.equal(state.saves, 0);
+    } finally { state.session.dispose(); }
+  }
+});
 test('本机历史原子替换写入，写入失败保留原文件且关闭文件', () => {
   let original = 'previous'; let temporary = ''; let closed = 0; let fail = false;
   const { LaneHistoryStore } = load('LaneHistoryStore', { '@kit.CoreFileKit': { fileIo: {

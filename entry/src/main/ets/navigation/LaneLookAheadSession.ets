@@ -3,6 +3,7 @@ import { LaneHistoryStore } from './LaneHistoryStore';
 import { LanePreviewEngine, LanePreviewState } from './LanePreview';
 import { decodeLanes, routePoints } from './LaneSdkData';
 import { LaneCollectionStore } from './LaneCollectionStore';
+import { exactRouteId } from './LaneRouteIdentity';
 
 export class LaneLookAheadSession {
   private navi: IAMapNavi;
@@ -10,6 +11,7 @@ export class LaneLookAheadSession {
   private engine: LanePreviewEngine;
   private listener: IAMapNaviListener;
   private route: string = '';
+  private routeMatch: string = '';
   private active: boolean = false;
   private recalculating: boolean = false;
   private weakGps: boolean = false;
@@ -103,6 +105,7 @@ export class LaneLookAheadSession {
         this.engine.suspend('尚未取得路线，等待前方引导点');
       } else {
         this.route = path.getPathid().toString();
+        this.routeMatch = '';
         this.engine.setRoute(this.route, routePoints(path));
         this.recalculating = false;
       }
@@ -116,14 +119,25 @@ export class LaneLookAheadSession {
       const path = this.navi.getNaviPath();
       if (!path) { this.engine.suspend('等待当前路线'); this.publish(); return; }
       if (path.getPathid().toString() !== this.route) { this.reloadRoute(); }
-      // pathID may be a route-selection key, whereas getPathid() is a native ID.
-      // Compare IDs only after resolving the selection key through the public map.
-      const reportedPath = this.navi.getNaviPaths()?.get(info.pathID);
-      const matches = reportedPath ? reportedPath.getPathid().toString() === this.route :
-        Number.isSafeInteger(info.pathID) && info.pathID.toString() === this.route;
+      // The bridge may pass bigint/string even though INaviInfo declares number.
+      // Resolve selection keys first; compare native IDs as exact decimal strings.
+      const callbackId = exactRouteId(info.pathID);
+      const selectionKey = callbackId ? Number(callbackId) : NaN;
+      const reportedPath = Number.isSafeInteger(selectionKey) ? this.navi.getNaviPaths()?.get(selectionKey) : undefined;
+      const matches = callbackId !== '' && (reportedPath ? reportedPath.getPathid().toString() : callbackId) === this.route;
+      const kind = typeof info.pathID;
       if (!matches) {
-        this.engine.suspend('路线位置尚未匹配，暂停采集');
+        this.routeMatch = '';
+        const reason = !callbackId ? '标识无效或数值精度不足' : reportedPath ? '选路映射不属于当前路线' : '原生标识不属于当前路线';
+        this.engine.suspend('路线位置尚未匹配（' + kind + '：' + reason + '），暂停采集');
       } else {
+        const method = reportedPath ? '选路映射' : '原生标识精确比较';
+        const signature = kind + ':' + method;
+        if (signature !== this.routeMatch) {
+          this.routeMatch = signature;
+          this.engine.collection.report('route_match', '路线位置已匹配',
+            '路线位置已匹配（' + kind + '，' + method + '）', Date.now());
+        }
         this.engine.progress(this.route, info.mCurSegIndex, info.mSegRemainDis, Date.now(), info.mType === 1);
       }
     } catch { this.engine.suspend('等待导航位置更新'); }
