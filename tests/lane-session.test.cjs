@@ -38,7 +38,8 @@ function setup() {
         new PreviewPoint(1,900,'乙 → 丙','右转','point-b',true)]
     }
   });
-  state.session = new LaneLookAheadSession(navi, '/private/files');
+  state.ends = [];
+  state.session = new LaneLookAheadSession(navi, '/private/files', arrived => state.ends.push(arrived));
   state.info = (overrides = {}) => state.listener.onNaviInfoUpdate({
     pathID: 12, mType: 1, mCurSegIndex: 0, mSegRemainDis: 50, ...overrides
   });
@@ -204,4 +205,14 @@ test('本机历史原子替换写入，写入失败保留原文件且关闭文�
   assert.equal(original,saved);
   assert.equal(closed,2);
   assert.ok(store.load().find('a',Date.now()));
+});
+
+test('实际SDK到达/停止事件一次性通知导航历史，退出清理不能覆盖到达', () => {
+  for (const arrived of [true, false]) {
+    const state = setup();
+    state.session.start();
+    if (arrived) state.listener.onArriveDestination(); else state.listener.onStopNavi();
+    state.listener.onStopNavi(); state.session.dispose();
+    assert.deepEqual(state.ends, [arrived]);
+  }
 });

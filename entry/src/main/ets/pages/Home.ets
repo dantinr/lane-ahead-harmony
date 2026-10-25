@@ -47,6 +47,7 @@ struct Home {
 
   onPageShow(): void {
     this.visible = true;
+    if (this.consent && !this.mapReady) { this.initializeLocation(); }
     if (this.mapReady && this.consent) {
       this.located = false;
       this.homeMap.resume();
@@ -106,8 +107,11 @@ struct Home {
         this.homeMap.locate();
       }
       this.locationStatus = '正在定位当前位置…';
-    } catch {
-      this.locationStatus = '无法定位，请检查精确位置权限、系统定位开关和网络后重试';
+    } catch (error) {
+      const reason = (error as Error).message;
+      this.locationStatus = reason === '请在系统设置中允许精确位置权限，然后点击重新定位' ||
+        reason === '请开启系统位置服务，然后点击重新定位' ? reason :
+        '无法定位，请检查精确位置权限、系统定位开关和网络后重试';
     } finally {
       this.locating = false;
     }
@@ -193,6 +197,8 @@ struct Home {
     Column({ space: 0 }) {
       Row({ space: 10 }) {
         Text('LaneAhead').fontSize(24).fontWeight(FontWeight.Bold).fontColor('#F0F5EF').layoutWeight(1)
+        Button('我的').height(32).fontSize(13).fontColor('#B5F489').backgroundColor('#263F2E')
+          .onClick(() => { this.getUIContext().getRouter().pushUrl({ url: 'pages/My' }); })
         Button(this.settings ? '完成' : '设置').height(32).fontSize(13).fontColor('#B5F489').backgroundColor('#263F2E')
           .onClick(() => { this.settings = !this.settings; })
       }.width('100%').padding({ left: 16, right: 16, top: 10, bottom: 10 })

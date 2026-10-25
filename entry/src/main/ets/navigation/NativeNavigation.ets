@@ -6,6 +6,7 @@ import {
 } from '@amap/amap_lbs_navi';
 import { Place } from './RoutePlanning';
 import { LaneLookAheadSession } from './LaneLookAheadSession';
+import { NavigationHistorySession } from './NavigationHistoryStore';
 
 export interface NavigationPanel {
   show(): void;
@@ -18,11 +19,14 @@ export class NativeNavigation {
   private generation: number = 0;
   private laneSession: LaneLookAheadSession | undefined = undefined;
   private lanePanel: NavigationPanel | undefined = undefined;
+  private historySession: NavigationHistorySession | undefined = undefined;
 
   cancelPending(): void {
     this.generation += 1;
     this.laneSession?.dispose();
     this.laneSession = undefined;
+    this.historySession?.finish('ended');
+    this.historySession = undefined;
     this.lanePanel?.hide();
     this.lanePanel = undefined;
   }
@@ -65,12 +69,17 @@ export class NativeNavigation {
       navi.setUseInnerVoice(true);
       this.laneSession?.dispose();
       this.laneSession = undefined;
+      this.historySession?.finish('ended');
+      this.historySession = undefined;
       this.lanePanel?.hide();
       this.lanePanel = undefined;
       let laneSession: LaneLookAheadSession | undefined = undefined;
+      let historySession: NavigationHistorySession | undefined = undefined;
       let exited: boolean = false;
       const closeLaneSession = (): void => {
         laneSession?.dispose();
+        historySession?.finish('ended');
+        if (this.historySession === historySession) { this.historySession = undefined; }
         if (this.laneSession === laneSession) {
           this.laneSession = undefined;
           this.lanePanel?.hide();
@@ -90,15 +99,19 @@ export class NativeNavigation {
       params.setNeedDestroyDriveManagerInstanceWhenNaviExit(true);
       AmapNaviPage.getInstance().showRoutePage(params, {
         onInitNaviFailure: () => {
+          if (exited || generation !== this.generation) { return; }
+          historySession?.finish('failed');
           closeLaneSession();
           onStatus('导航初始化失败，请检查鸿蒙 Key 是否绑定当前签名的 AppID');
         },
         onCalculateRouteFailure: (code: number) => {
+          if (exited || generation !== this.generation) { return; }
+          historySession?.finish('failed');
           laneSession?.stop('路线规划失败，暂停车道提示');
           onStatus('导航路线规划失败（' + code + '），请检查网络、定位和导航服务权限');
         },
         onStartNavi: (type: NaviType) => {
-          if (exited) { return; }
+          if (exited || generation !== this.generation || historySession) { return; }
           if (type !== NaviType.GPS) {
             exited = true;
             closeLaneSession();
@@ -108,7 +121,14 @@ export class NativeNavigation {
             return;
           }
           closeLaneSession();
-          laneSession = new LaneLookAheadSession(navi, context.filesDir);
+          historySession = new NavigationHistorySession(context.filesDir, destination.name, destination.address);
+          this.historySession = historySession;
+          let plannedMeters: number = 0;
+          try { plannedMeters = navi.getNaviPath()?.getAllLength() || 0; } catch { /* Optional route summary. */ }
+          historySession.start(plannedMeters);
+          laneSession = new LaneLookAheadSession(navi, context.filesDir, (arrived: boolean) => {
+            if (generation === this.generation && !exited) { historySession?.finish(arrived ? 'arrived' : 'ended'); }
+          });
           this.laneSession = laneSession;
           laneSession.start();
           this.lanePanel = lanePanel;
@@ -119,14 +139,15 @@ export class NativeNavigation {
           onStatus('实时导航已开始');
         },
         onArriveDestination: (simulated: boolean) => {
-          if (!simulated) {
-            laneSession?.stop('已到达目的地');
+          if (!simulated && !exited && generation === this.generation) {
+            historySession?.finish('arrived');
+            laneSession?.stop('已到达目的地', true);
             onStatus('已到达目的地');
           }
         },
-        onReCalculateRoute: () => { laneSession?.replan(); },
+        onReCalculateRoute: () => { if (!exited && generation === this.generation) { laneSession?.replan(); } },
         onExitPage: (pageType: AMapPageType) => {
-          if (exited) { return; }
+          if (exited || generation !== this.generation) { return; }
           exited = true;
           closeLaneSession();
           // The SDK can retain its route page after navigation exits, without
@@ -137,6 +158,8 @@ export class NativeNavigation {
         }
       });
     } catch {
+      this.historySession?.finish('failed');
+      this.historySession = undefined;
       this.laneSession?.dispose();
       this.laneSession = undefined;
       this.lanePanel?.hide();

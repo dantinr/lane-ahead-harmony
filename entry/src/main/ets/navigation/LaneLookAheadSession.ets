@@ -20,12 +20,14 @@ export class LaneLookAheadSession {
   private savedDiagnosticsRevision: number = -1;
   private diagnosticAttemptAt: number = 0;
   private timer: number = -1;
+  private onEnd: ((arrived: boolean) => void) | undefined;
 
-  constructor(navi: IAMapNavi, filesDir: string) {
+  constructor(navi: IAMapNavi, filesDir: string, onEnd?: (arrived: boolean) => void) {
     this.navi = navi;
     this.store = new LaneHistoryStore(filesDir);
     this.engine = new LanePreviewEngine(this.store.load());
     this.diagnostics = new LaneCollectionStore(filesDir);
+    this.onEnd = onEnd;
     this.listener = {
       onNaviInfoUpdate: (info: INaviInfo) => { this.update(info); },
       showLaneInfo: (info: IAMapLaneInfo | null) => {
@@ -69,7 +71,7 @@ export class LaneLookAheadSession {
         this.publish();
       },
       onStopNavi: () => { this.stop('导航已结束'); },
-      onArriveDestination: () => { this.stop('已到达目的地'); }
+      onArriveDestination: () => { this.stop('已到达目的地', true); }
     };
     navi.addAMapNaviListener(this.listener);
   }
@@ -153,12 +155,13 @@ export class LaneLookAheadSession {
     }
   }
 
-  stop(reason: string): void {
+  stop(reason: string, arrived: boolean = false): void {
     if (!this.active || this.disposed) { return; }
     this.active = false;
     if (this.timer !== -1) { clearInterval(this.timer); this.timer = -1; }
     this.engine.finish(reason, Date.now());
     this.publish(true);
+    this.onEnd?.(arrived);
   }
 
   dispose(): void {

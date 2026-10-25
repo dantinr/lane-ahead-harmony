@@ -9,7 +9,7 @@ const context = { filesDir: '/private/files', getApplicationContext: () => 'appl
 function setup(options = {}) {
   const calls = [];
   const statuses = [];
-  const sdk = { calls, statuses, laneEvents: [] };
+  const sdk = { calls, statuses, laneEvents: [], historyEvents: [], historySessions: [] };
   const params = {
     setNaviMode(mode) { this.mode = mode; },
     setUseInnerVoice(voice) { this.voice = voice; },
@@ -21,12 +21,17 @@ function setup(options = {}) {
     exitRoutePage() { calls.push('exit'); }
   };
   const { NativeNavigation } = load('NativeNavigation', {
+    './NavigationHistoryStore': { NavigationHistorySession: class {
+      constructor(filesDir, name, address) { this.name = name; sdk.historySessions.push(this); }
+      start(meters) { this.meters = meters; sdk.historyEvents.push('start'); }
+      finish(status) { sdk.historyEvents.push(status); }
+    } },
     './LaneLookAheadSession': { LaneLookAheadSession: class {
-      constructor(_, filesDir) { sdk.filesDir = filesDir; }
-      start() { sdk.laneEvents.push('start'); }
-      stop() { sdk.laneEvents.push('stop'); }
+      constructor(_, filesDir, onEnd) { sdk.filesDir = filesDir; this.onEnd = onEnd; sdk.endNavigation = onEnd; }
+      start() { this.active = true; sdk.laneEvents.push('start'); }
+      stop(_, arrived = false) { sdk.laneEvents.push('stop'); if (this.active) { this.active = false; this.onEnd?.(arrived); } }
       replan() { sdk.laneEvents.push('replan'); }
-      dispose() { sdk.laneEvents.push('dispose'); }
+      dispose() { sdk.laneEvents.push('dispose'); if (this.active) { this.active = false; this.onEnd?.(false); } }
     } },
     '@kit.AbilityKit': { abilityAccessCtrl: { createAtManager: () => ({
       requestPermissionsFromUser: async (_, permissions) => {
@@ -50,7 +55,8 @@ function setup(options = {}) {
         sdk.context = ctx;
         sdk.key = providedKey;
         if (options.sdkThrows) throw Error('secret SDK error: ' + key);
-        return { setUseInnerVoice() {}, stopNavi() { calls.push('stop'); } };
+        return { setUseInnerVoice() {}, stopNavi() { calls.push('stop'); },
+          getNaviPath() { return { getAllLength: () => 17500 }; } };
       } },
       NaviLatLng: class { constructor(latitude, longitude) { Object.assign(this, { latitude, longitude }); } },
       NaviPoi: class { constructor(name, coordinate, poiId) { Object.assign(this, { name, coordinate, poiId }); } },
@@ -150,4 +156,37 @@ test('无效 Key 不触发权限或 SDK 调用', async () => {
   const sdk = setup();
   await assert.rejects(sdk.navigation.open(context, '', destination, () => {}), /鸿蒙导航 Key/);
   assert.deepEqual(sdk.calls, []);
+});
+
+test('仅真正开始GPS时创建历史，取消选路和模拟均不记录，重复开始不多记', async () => {
+  const sdk = setup();
+  await sdk.open();
+  assert.equal(sdk.historySessions.length, 0);
+  sdk.callback.onExitPage(0);
+  assert.equal(sdk.historySessions.length, 0);
+  await sdk.open(); sdk.callback.onStartNavi(1);
+  assert.equal(sdk.historySessions.length, 0);
+  await sdk.open(); sdk.callback.onStartNavi(0); sdk.callback.onStartNavi(0);
+  assert.equal(sdk.historySessions.length, 1);
+  assert.equal(sdk.historySessions[0].name, destination.name);
+  assert.equal(sdk.historySessions[0].meters, 17500);
+  assert.deepEqual(sdk.historyEvents, ['start']);
+});
+
+test('SDK停止、实际到达、选路页退出和取消均结束历史，旧会话不能改写新记录', async () => {
+  const sdk = setup();
+  await sdk.open(); sdk.callback.onStartNavi(0);
+  sdk.endNavigation(false);
+  assert.ok(sdk.historyEvents.includes('ended'));
+  sdk.callback.onArriveDestination(false);
+  assert.ok(sdk.historyEvents.includes('arrived'));
+  const old = sdk.callback;
+  await sdk.open(); sdk.callback.onStartNavi(0);
+  const before = sdk.historyEvents.length;
+  old.onArriveDestination(false); old.onStartNavi(0); old.onCalculateRouteFailure(1); old.onExitPage(1);
+  assert.equal(sdk.historyEvents.length, before);
+  sdk.callback.onCalculateRouteFailure(1);
+  assert.ok(sdk.historyEvents.includes('failed'));
+  sdk.navigation.cancelPending();
+  assert.equal(sdk.historySessions.length, 2);
 });

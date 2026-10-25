@@ -10,6 +10,7 @@
 | `navigation/NativeNavigation.ets`、`navigation/LaneLookAheadSession.ets` | 原生导航会话、SDK 监听与清理 |
 | `navigation/LaneSdkData.ets`、`navigation/LanePreview.ets` | SDK 数据适配、引导点距离、实时车道与历史匹配 |
 | `navigation/LaneHistoryStore.ets` | 应用私有目录中的车道缓存 |
+| `navigation/NavigationHistory.ets`、`navigation/NavigationHistoryStore.ets`、`pages/My.ets` | 导航历史模型、会话持久化与「我的」页面 |
 | `navigation/LaneCollection.ets`、`navigation/LaneCollectionStore.ets`、`pages/LaneDiagnostics.ets` | 采集状态、诊断摘要持久化与查看 |
 | `components/LaneLookAheadPanel.ets` | 顶部车道面板与原生悬浮层 |
 | `pages/PlanRoute.ets`、`navigation/RoutePlanning.ets` | Web 地点搜索和指定起点规划 |
@@ -23,6 +24,7 @@
 - 历史车道按进口/出口几何、方向和转向严格匹配，仅供参考。保留现有保守学习、连续越点确认、7 天过期、500 条上限及损坏文件保护；调整规则时补充相关逻辑测试。
 - 混合车道仅突出推荐分支，各引导点独立推荐。定位失效、偏航、重算和路线切换时及时撤下旧提示，模拟导航不写入真实历史。
 - 采集诊断区分回调、通过确认和实际写入成功；保留未保存原因，不改变保守学习条件。诊断仅保留最近一次导航的计数及原因，最多 60 条事件，不写入坐标、道路名、路线 ID 或 Key；定期节流保存，结束时强制保存。
+- 导航历史在真实 GPS 导航开始时创建，仅在本机保留最近 200 次目的地、时间、结束状态及出发时规划里程。选路取消和模拟不创建记录；到达不被退出覆盖，旧回调不能修改新会话。异常退出恢复为中断，不编造结束时间或实际行驶里程；导航历史与车道缓存、采集诊断独立清除，不上传真实历史。
 - SDK 初始化须在隐私同意与位置授权之后。处理过时异步请求，释放地图定位、监听、定时器与悬浮层；退出导航后回到首页，再次进入使用新会话。
 - 顶部面板避开转向卡片、速度表和路况条。悬浮层的全屏原生容器使用透明触摸模式，面板外的地图与导航按钮应可操作；不要用默认拦截触摸的全屏自定义组件包装它。
 

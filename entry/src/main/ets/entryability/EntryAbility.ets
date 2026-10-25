@@ -1,9 +1,13 @@
 import { UIAbility } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
+import { NavigationHistoryStore } from '../navigation/NavigationHistoryStore';
 
 export default class EntryAbility extends UIAbility {
   onWindowStageCreate(windowStage: window.WindowStage): void {
+    const history = new NavigationHistoryStore(this.context.filesDir);
+    history.recoverInterrupted();
+    AppStorage.setOrCreate('laneAheadNavigationHistoryError', history.error);
     AppStorage.setOrCreate('laneAheadForeground', true);
     windowStage.loadContent('pages/Home', (error) => {
       if (error.code) {
