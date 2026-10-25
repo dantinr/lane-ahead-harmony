@@ -2,6 +2,7 @@ import { common } from '@kit.AbilityKit';
 import { KeyboardAvoidMode } from '@kit.ArkUI';
 import { AMapRouteService, Place } from '../navigation/RoutePlanning';
 import { HttpRouteTransport } from '../navigation/HttpRouteTransport';
+import { resolvePlaceSearch } from '../navigation/SearchScope';
 import { destinationSearchSession } from '../navigation/DestinationSearchSession';
 import { SearchHistory, SearchRecord } from '../navigation/SearchHistory';
 import { SearchHistoryStore } from '../navigation/SearchHistoryStore';
@@ -22,6 +23,7 @@ struct SearchDestination {
   @State results: Place[] = [];
   @State recentSearches: SearchRecord[] = [];
   @State historyError: string = '';
+  @State resultCity: string = '';
   private session: number = 0;
   private webKey: string = '';
   private transport: HttpRouteTransport = new HttpRouteTransport();
@@ -91,9 +93,9 @@ struct SearchDestination {
       const city = await new AMapRouteService(this.cityTransport, this.webKey).cityAt(origin.longitude, origin.latitude);
       if (revision !== this.cityRevision) { return; }
       this.city = city;
-      this.message = '';
+      if (!this.busy && !this.searched) { this.message = ''; }
     } catch {
-      if (revision === this.cityRevision) {
+      if (revision === this.cityRevision && !this.busy && !this.searched) {
         this.message = '未能识别当前城市，请返回首页重新定位，或填写搜索城市';
         this.showScope = true;
       }
@@ -155,6 +157,7 @@ struct SearchDestination {
     this.cancelSearch();
     this.results = [];
     this.searched = false;
+    this.resultCity = '';
     this.message = '';
   }
 
@@ -166,21 +169,21 @@ struct SearchDestination {
     const query = this.query.trim();
     const city = this.city.trim();
     if (!query) { this.message = '请输入地点名称或地址'; return; }
-    if (!city) {
-      if (this.locatingCity) { this.message = '正在识别当前城市，请稍后搜索'; }
-      else { this.showScope = true; this.message = '请先填写搜索城市，或返回首页重新定位'; }
-      return;
-    }
     this.busy = true;
     try {
+      const scope = resolvePlaceSearch(query, city);
       const places = await new AMapRouteService(this.transport, this.webKey).search(query, city);
       if (revision !== this.revision) { return; }
       this.results = places;
       this.searched = true;
+      this.resultCity = scope.explicitCity ? scope.city : '';
       this.remember(query);
       this.message = places.length === 0 ? '未找到相关地点，试试其他关键词或修改搜索范围' : '';
     } catch (error) {
-      if (revision === this.revision) { this.message = (error as Error).message || '搜索失败，请重试'; }
+      if (revision === this.revision) {
+        this.message = (error as Error).message || '搜索失败，请重试';
+        if (!city) { this.showScope = true; }
+      }
     } finally {
       if (revision === this.revision) { this.busy = false; }
     }
@@ -214,7 +217,7 @@ struct SearchDestination {
     if (this.recentSearches.length === 0 && !this.historyError) {
       Column({ space: 12 }) {
         Text('搜索目的地').fontSize(22).fontWeight(FontWeight.Medium).fontColor('#33483B')
-        Text('输入地点名称或地址，找到你要去的地方').fontSize(14).fontColor('#87938B').textAlign(TextAlign.Center)
+        Text('输入地点名称或地址，跨城可搜“北京 望京花园”').fontSize(14).fontColor('#87938B').textAlign(TextAlign.Center)
       }.width('100%').padding({ top: 64, bottom: 40 })
     }
   }
@@ -239,7 +242,8 @@ struct SearchDestination {
           .onClick(() => { this.search(); })
       }.width('100%').padding({ left: 12, right: 12, top: 12, bottom: 6 })
       Row() {
-        Text(this.locatingCity ? '正在识别当前城市…' : this.busy ? '正在搜索…' : this.results.length > 0 ? '选择目的地' : '')
+        Text(this.busy ? '正在搜索…' : this.resultCity ? this.resultCity + ' · 搜索结果' :
+          this.locatingCity ? '正在识别当前城市…' : this.results.length > 0 ? '选择目的地' : '')
           .fontSize(12).fontColor('#87938B').layoutWeight(1)
         Button(this.showScope ? '收起范围' : '搜索范围').height(30).fontSize(12).fontColor('#77837B')
           .backgroundColor(Color.Transparent).onClick(() => { this.showScope = !this.showScope; })

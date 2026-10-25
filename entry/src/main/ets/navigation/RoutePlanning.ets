@@ -1,3 +1,5 @@
+import { resolvePlaceSearch } from './SearchScope';
+
 // A planning step is NOT a physical junction. Keep it separate from Guidance.Junction.
 export class Place {
   id: string;
@@ -60,6 +62,9 @@ interface AMapPoi {
   name?: string;
   address?: string | string[];
   location?: string;
+  pname?: string | string[];
+  cityname?: string | string[];
+  adname?: string | string[];
 }
 
 interface AMapSearchResponse extends AMapResponse {
@@ -174,8 +179,14 @@ export function decodePlaces(body: string): Place[] {
       return;
     }
     try {
-      const place = new Place(typeof poi.id === 'string' ? poi.id : '', poi.name,
-        typeof poi.address === 'string' ? poi.address : '', poi.location);
+      const city = typeof poi.cityname === 'string' && poi.cityname ? poi.cityname :
+        typeof poi.pname === 'string' ? poi.pname : '';
+      const district = typeof poi.adname === 'string' && poi.adname !== city ? poi.adname : '';
+      const region = city + district;
+      const address = typeof poi.address === 'string' ? poi.address : '';
+      const displayAddress = region && address && !address.startsWith(region) ? region + ' · ' + address :
+        address || region;
+      const place = new Place(typeof poi.id === 'string' ? poi.id : '', poi.name, displayAddress, poi.location);
       if (!result.some((existing: Place) => existing.id === place.id &&
         existing.location === place.location)) {
         result.push(place);
@@ -242,11 +253,9 @@ export class AMapRouteService {
   }
 
   async search(keyword: string, city: string): Promise<Place[]> {
-    if (!keyword.trim() || !city.trim()) {
-      throw new Error('请填写城市和要搜索的地点');
-    }
+    const scope = resolvePlaceSearch(keyword, city);
     const url: string = 'https://restapi.amap.com/v5/place/text?key=' + encodeURIComponent(this.key) +
-      '&keywords=' + encodeURIComponent(keyword.trim()) + '&region=' + encodeURIComponent(city.trim()) +
+      '&keywords=' + encodeURIComponent(scope.keyword) + '&region=' + encodeURIComponent(scope.region) +
       '&city_limit=true&page_size=10&page_num=1';
     return decodePlaces(await this.transport.get(url));
   }
