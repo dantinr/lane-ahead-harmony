@@ -50,7 +50,7 @@ pwsh -NoProfile -File .\scripts\build.ps1
 
 ## 本机数据与版本
 
-- 实际 Key 位于 `.local/gaode`、`.local/gaode-harmony`，由 `scripts/prepare-local-config.cjs` 生成 `entry/src/main/resources/rawfile/map-keys.json`。不要打印、提交或写入文档；检查设备布局前也须脱敏。
+- 实际 Key 位于 `.local/gaode`、`.local/gaode-harmony`，由 `scripts/prepare-local-config.cjs` 生成 `entry/src/main/resources/rawfile/map-keys.json`，安装后自动使用。设置页不提供 Key 编辑；更换本机配置后重新构建安装。不要打印、提交或写入文档；检查设备布局前也须脱敏。
 - `build-profile.json5` 可能含本机签名配置、证书路径及密码。保留现有本机改动，提交使用明确文件列表，避免将签名配置一起暂存。
 - `.local/`、Key 资源、HAP、日志和设备截图/布局保持被 Git 忽略。设备产物放 `artifacts/device-*`，日志使用 `.log`，不上传真实轨迹或缓存。
 - 应用版本仅从 `VERSION` 修改，构建脚本同步 `AppScope/app.json5` 和根 `oh-package.json5`，版本变化时递增 `versionCode`。保留 entry 包独立的模块版本；纯文档修改无需升版。

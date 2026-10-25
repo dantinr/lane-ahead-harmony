@@ -1,5 +1,4 @@
 import { common } from '@kit.AbilityKit';
-import { KeyboardAvoidMode } from '@kit.ArkUI';
 import { MapViewComponent } from '@amap/amap_lbs_map3d';
 import { HomeMap } from '../navigation/HomeMap';
 import { loadMapConfiguration } from '../navigation/MapConfiguration';
@@ -37,7 +36,6 @@ struct Home {
   private searchOrigin: SearchOrigin | undefined = undefined;
   private visible: boolean = true;
   private alive: boolean = true;
-  private previousKeyboardMode: KeyboardAvoidMode | undefined = undefined;
 
   aboutToAppear(): void {
     const config = loadMapConfiguration(this.context());
@@ -50,10 +48,6 @@ struct Home {
 
   onPageShow(): void {
     this.visible = true;
-    if (this.previousKeyboardMode === undefined) {
-      this.previousKeyboardMode = this.getUIContext().getKeyboardAvoidMode();
-    }
-    this.getUIContext().setKeyboardAvoidMode(KeyboardAvoidMode.RESIZE);
     if (this.consent && !this.mapReady) { this.initializeLocation(); }
     if (this.mapReady && this.consent) {
       this.beginCityLocation();
@@ -73,7 +67,6 @@ struct Home {
 
   onPageHide(): void {
     this.visible = false;
-    this.restoreKeyboardMode();
     this.cancelCityLocation();
     this.homeMap.pause();
   }
@@ -81,7 +74,6 @@ struct Home {
   aboutToDisappear(): void {
     this.alive = false;
     destinationSearchSession.finish(this.searchSession);
-    this.restoreKeyboardMode();
     this.cancelCityLocation();
     this.navigation.cancelPending();
     this.homeMap.destroy();
@@ -89,13 +81,6 @@ struct Home {
 
   private context(): common.UIAbilityContext {
     return this.getUIContext().getHostContext() as common.UIAbilityContext;
-  }
-
-  private restoreKeyboardMode(): void {
-    if (this.previousKeyboardMode !== undefined) {
-      this.getUIContext().setKeyboardAvoidMode(this.previousKeyboardMode);
-      this.previousKeyboardMode = undefined;
-    }
   }
 
   private foregroundChanged(): void {
@@ -114,8 +99,7 @@ struct Home {
       return;
     }
     if (!/^[a-f0-9]{32}$/i.test(this.harmonyKey)) {
-      this.locationStatus = '请在设置中配置高德鸿蒙 Key';
-      this.settings = true;
+      this.locationStatus = '地图服务配置缺失，请安装已配置的应用版本';
       return;
     }
     this.locating = true;
@@ -185,13 +169,6 @@ struct Home {
       });
   }
 
-  private clearDestination(): void {
-    this.navigation.cancelPending();
-    this.destination = undefined;
-    this.homeMap.clearSelection();
-    this.message = '';
-  }
-
   private async startNavigation(): Promise<void> {
     const destination = this.destination;
     if (!destination || !this.located || this.starting) {
@@ -257,18 +234,9 @@ struct Home {
       if (this.settings) {
         Scroll() {
           Column({ space: 10 }) {
-            Text(this.webKey && this.harmonyKey ? '地图服务已默认配置' : '请配置地图服务 Key')
+            Text(this.webKey && this.harmonyKey ? '地图服务已默认配置' : '地图服务配置缺失，请安装已配置的应用版本')
               .fontColor('#B7C8BA').fontSize(13).width('100%')
             Button('车道采集诊断').onClick(() => { this.getUIContext().getRouter().pushUrl({ url: 'pages/LaneDiagnostics' }); })
-            TextInput({ placeholder: '高德 Web 服务 Key', text: this.webKey }).type(InputType.Password)
-              .fontColor('#F0F5EF').placeholderColor('#9FB5A8').backgroundColor('#1D352B')
-              .onChange((value: string) => {
-                if (value !== this.webKey) { this.webKey = value; this.clearDestination(); this.cancelCityLocation(); }
-              })
-            TextInput({ placeholder: '高德鸿蒙导航 Key', text: this.harmonyKey }).type(InputType.Password)
-              .fontColor('#F0F5EF').placeholderColor('#9FB5A8').backgroundColor('#1D352B')
-              .enabled(!this.mapReady).onChange((value: string) => { this.harmonyKey = value; })
-            Button('应用配置并定位').onClick(() => { this.settings = false; this.initializeLocation(); })
             Button('指定起点规划').onClick(() => { this.getUIContext().getRouter().pushUrl({ url: 'pages/PlanRoute' }); })
             Button('车道演示').onClick(() => { this.getUIContext().getRouter().pushUrl({ url: 'pages/Index' }); })
             Text('导航页显示前方 2／3 个引导点。实际观测的车道仅保存在本机，历史参考保留 7 天。')

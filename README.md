@@ -38,6 +38,6 @@ pwsh -NoProfile -File .\scripts\build.ps1            # 测试、编译与打包
 - `.local/gaode-harmony`：高德 HarmonyOS NEXT Key，须绑定当前签名的完整 AppID。
 - 真机签名：在 DevEco Studio 的 **Project Structure → Signing Configs** 配置；手机开启 USB 调试并授权后运行 `entry`。
 
-构建将 Key 注入被 Git 忽略的资源，个人安装包默认可用；没有本机 Key 文件时可在首页设置中填写。实际 Key、签名凭据和安装包仅保留在本机。
+构建将 Key 注入被 Git 忽略的资源，安装后自动使用，设置页不提供 Key 输入。更换 Key 后需重新构建安装；实际 Key、签名凭据和安装包仅保留在本机。
 
 开发约定见 [AGENTS.md](AGENTS.md)；车道数据来源、缓存规则与验证范围见 [接入说明](docs/lane-data-integration.md)。
