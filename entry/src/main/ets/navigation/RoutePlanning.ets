@@ -66,6 +66,19 @@ interface AMapSearchResponse extends AMapResponse {
   pois?: AMapPoi[];
 }
 
+interface AddressComponent {
+  city?: string | string[];
+  province?: string | string[];
+}
+
+interface ReverseAddress {
+  addressComponent?: AddressComponent;
+}
+
+interface AMapCityResponse extends AMapResponse {
+  regeocode?: ReverseAddress;
+}
+
 interface AMapCost {
   duration?: string | number;
 }
@@ -128,6 +141,20 @@ function nonnegativeNumber(value: string | number | undefined): number | undefin
   }
   const number: number = Number(value);
   return Number.isFinite(number) && number >= 0 ? number : undefined;
+}
+
+export function decodeCity(body: string): string {
+  let response: AMapCityResponse;
+  try { response = JSON.parse(body) as AMapCityResponse; } catch {
+    throw new Error('城市信息返回格式异常，请重新定位');
+  }
+  checkResponse(response);
+  const component = response.regeocode?.addressComponent;
+  const city = typeof component?.city === 'string' ? component.city.trim() : '';
+  if (city && city.length <= 80) { return city; }
+  const province = typeof component?.province === 'string' ? component.province.trim() : '';
+  if (['北京市', '上海市', '天津市', '重庆市'].indexOf(province) >= 0) { return province; }
+  throw new Error('未能识别当前城市，请重新定位或手动填写');
 }
 
 export function decodePlaces(body: string): Place[] {
@@ -222,6 +249,18 @@ export class AMapRouteService {
       '&keywords=' + encodeURIComponent(keyword.trim()) + '&region=' + encodeURIComponent(city.trim()) +
       '&city_limit=true&page_size=10&page_num=1';
     return decodePlaces(await this.transport.get(url));
+  }
+
+  async cityAt(longitude: number, latitude: number): Promise<string> {
+    if (!Number.isFinite(longitude) || !Number.isFinite(latitude) || Math.abs(longitude) > 180 ||
+      Math.abs(latitude) > 90 || (longitude === 0 && latitude === 0)) {
+      throw new Error('定位坐标无效，请重新定位');
+    }
+    // Coordinates come from the map SDK's GCJ-02 location source, not system GPS.
+    const location = longitude.toFixed(6) + ',' + latitude.toFixed(6);
+    const url = 'https://restapi.amap.com/v3/geocode/regeo?key=' + encodeURIComponent(this.key) +
+      '&location=' + encodeURIComponent(location) + '&extensions=base&output=JSON';
+    return decodeCity(await this.transport.get(url));
   }
 
   async plan(origin: Place, destination: Place): Promise<PlannedRoute[]> {

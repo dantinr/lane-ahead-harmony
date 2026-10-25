@@ -1,4 +1,5 @@
 import { common } from '@kit.AbilityKit';
+import { KeyboardAvoidMode } from '@kit.ArkUI';
 import { MapViewComponent } from '@amap/amap_lbs_map3d';
 import { HomeMap } from '../navigation/HomeMap';
 import { loadMapConfiguration } from '../navigation/MapConfiguration';
@@ -7,6 +8,8 @@ import { HttpRouteTransport } from '../navigation/HttpRouteTransport';
 import { NativeNavigation } from '../navigation/NativeNavigation';
 import { LanePanelOverlay } from '../components/LaneLookAheadPanel';
 import { LaneHistoryStore } from '../navigation/LaneHistoryStore';
+import { SearchCity } from '../navigation/SearchCity';
+import { destinationSearchSession, SearchOrigin } from '../navigation/DestinationSearchSession';
 
 PersistentStorage.persistProp('laneAheadLocationConsent', false);
 
@@ -21,20 +24,20 @@ struct Home {
   @State locating: boolean = false;
   @State located: boolean = false;
   @State locationStatus: string = '等待定位授权';
-  @State city: string = '北京市';
-  @State query: string = '';
+  @State city: string = '';
   @State destination: Place | undefined = undefined;
-  @State results: Place[] = [];
-  @State busy: boolean = false;
   @State starting: boolean = false;
   @State settings: boolean = false;
   @State message: string = '';
   private homeMap: HomeMap = new HomeMap();
-  private transport: HttpRouteTransport = new HttpRouteTransport();
+  private cityTransport: HttpRouteTransport = new HttpRouteTransport();
+  private searchCity: SearchCity = new SearchCity();
   private navigation: NativeNavigation = new NativeNavigation();
-  private revision: number = 0;
+  private searchSession: number = 0;
+  private searchOrigin: SearchOrigin | undefined = undefined;
   private visible: boolean = true;
   private alive: boolean = true;
+  private previousKeyboardMode: KeyboardAvoidMode | undefined = undefined;
 
   aboutToAppear(): void {
     const config = loadMapConfiguration(this.context());
@@ -47,22 +50,39 @@ struct Home {
 
   onPageShow(): void {
     this.visible = true;
+    if (this.previousKeyboardMode === undefined) {
+      this.previousKeyboardMode = this.getUIContext().getKeyboardAvoidMode();
+    }
+    this.getUIContext().setKeyboardAvoidMode(KeyboardAvoidMode.RESIZE);
     if (this.consent && !this.mapReady) { this.initializeLocation(); }
     if (this.mapReady && this.consent) {
+      this.beginCityLocation();
       this.located = false;
       this.homeMap.resume();
+    }
+    if (this.searchSession > 0) {
+      const selected = destinationSearchSession.finish(this.searchSession);
+      this.searchSession = 0;
+      if (selected) {
+        this.destination = selected;
+        this.message = '';
+        this.homeMap.select(selected);
+      }
     }
   }
 
   onPageHide(): void {
     this.visible = false;
-    this.cancelSearch();
+    this.restoreKeyboardMode();
+    this.cancelCityLocation();
     this.homeMap.pause();
   }
 
   aboutToDisappear(): void {
     this.alive = false;
-    this.cancelSearch();
+    destinationSearchSession.finish(this.searchSession);
+    this.restoreKeyboardMode();
+    this.cancelCityLocation();
     this.navigation.cancelPending();
     this.homeMap.destroy();
   }
@@ -71,11 +91,19 @@ struct Home {
     return this.getUIContext().getHostContext() as common.UIAbilityContext;
   }
 
+  private restoreKeyboardMode(): void {
+    if (this.previousKeyboardMode !== undefined) {
+      this.getUIContext().setKeyboardAvoidMode(this.previousKeyboardMode);
+      this.previousKeyboardMode = undefined;
+    }
+  }
+
   private foregroundChanged(): void {
     if (!this.foreground) {
-      this.cancelSearch();
+      this.cancelCityLocation();
       this.homeMap.pause();
     } else if (this.visible && this.mapReady) {
+      this.beginCityLocation();
       this.located = false;
       this.homeMap.resume();
     }
@@ -92,6 +120,7 @@ struct Home {
     }
     this.locating = true;
     this.located = false;
+    this.beginCityLocation();
     this.locationStatus = '正在获取位置权限…';
     try {
       await this.homeMap.authorize(this.context());
@@ -101,7 +130,7 @@ struct Home {
       if (!this.mapReady) {
         this.homeMap.prepare(this.context(), this.harmonyKey,
           (status: string) => { this.locationStatus = status; },
-          () => { this.located = true; });
+          (longitude: number, latitude: number) => { this.receivedLocation(longitude, latitude); });
         this.mapReady = true;
       } else {
         this.homeMap.locate();
@@ -112,48 +141,55 @@ struct Home {
       this.locationStatus = reason === '请在系统设置中允许精确位置权限，然后点击重新定位' ||
         reason === '请开启系统位置服务，然后点击重新定位' ? reason :
         '无法定位，请检查精确位置权限、系统定位开关和网络后重试';
+      this.cancelCityLocation();
     } finally {
       this.locating = false;
     }
   }
 
-  private cancelSearch(): void {
-    this.revision += 1;
-    this.transport.cancelAll();
-    this.busy = false;
+  private beginCityLocation(): void {
+    this.searchOrigin = undefined;
+    this.cityTransport.cancelAll();
+    this.searchCity.begin();
+    this.syncCity();
+  }
+
+  private cancelCityLocation(): void {
+    this.searchCity.cancel();
+    this.cityTransport.cancelAll();
+  }
+
+  private syncCity(): void {
+    this.city = this.searchCity.city;
+  }
+
+  private async receivedLocation(longitude: number, latitude: number): Promise<void> {
+    if (!this.alive || !this.visible || !this.foreground) { return; }
+    this.located = true;
+    this.searchOrigin = { longitude: longitude, latitude: latitude, receivedAt: Date.now() };
+    const updated = await this.searchCity.located(longitude, latitude, (lng: number, lat: number) => {
+      return new AMapRouteService(this.cityTransport, this.webKey).cityAt(lng, lat);
+    });
+    if (updated && this.alive && this.visible && this.foreground) { this.syncCity(); }
+  }
+
+  private openSearch(): void {
+    if (this.starting || this.searchSession > 0) { return; }
+    this.searchSession = destinationSearchSession.begin(this.city, this.webKey, this.searchOrigin);
+    const session = this.searchSession;
+    this.getUIContext().getRouter().pushUrl({ url: 'pages/SearchDestination', params: { session: session } })
+      .catch(() => {
+        destinationSearchSession.finish(session);
+        if (this.searchSession === session) { this.searchSession = 0; }
+        this.message = '无法打开搜索，请重试';
+      });
   }
 
   private clearDestination(): void {
-    this.cancelSearch();
     this.navigation.cancelPending();
     this.destination = undefined;
-    this.results = [];
     this.homeMap.clearSelection();
     this.message = '';
-  }
-
-  private async search(): Promise<void> {
-    this.getUIContext().getFocusController().clearFocus();
-    this.clearDestination();
-    const revision = this.revision;
-    this.busy = true;
-    try {
-      const service = new AMapRouteService(this.transport, this.webKey);
-      const places = await service.search(this.query, this.city);
-      if (revision !== this.revision) {
-        return;
-      }
-      this.results = places;
-      this.message = places.length === 0 ? '未找到地点，请换个名称或城市' : '请选择目的地，核对名称和地址';
-    } catch (error) {
-      if (revision === this.revision) {
-        this.message = (error as Error).message || '搜索失败，请重试';
-      }
-    } finally {
-      if (revision === this.revision) {
-        this.busy = false;
-      }
-    }
   }
 
   private async startNavigation(): Promise<void> {
@@ -226,7 +262,9 @@ struct Home {
             Button('车道采集诊断').onClick(() => { this.getUIContext().getRouter().pushUrl({ url: 'pages/LaneDiagnostics' }); })
             TextInput({ placeholder: '高德 Web 服务 Key', text: this.webKey }).type(InputType.Password)
               .fontColor('#F0F5EF').placeholderColor('#9FB5A8').backgroundColor('#1D352B')
-              .onChange((value: string) => { if (value !== this.webKey) { this.webKey = value; this.clearDestination(); } })
+              .onChange((value: string) => {
+                if (value !== this.webKey) { this.webKey = value; this.clearDestination(); this.cancelCityLocation(); }
+              })
             TextInput({ placeholder: '高德鸿蒙导航 Key', text: this.harmonyKey }).type(InputType.Password)
               .fontColor('#F0F5EF').placeholderColor('#9FB5A8').backgroundColor('#1D352B')
               .enabled(!this.mapReady).onChange((value: string) => { this.harmonyKey = value; })
@@ -245,47 +283,23 @@ struct Home {
       } else if (this.consent) {
         Column({ space: 10 }) {
           Text(this.locationStatus).fontSize(12).fontColor(this.located ? '#B5F489' : '#E4CA92').width('100%')
-          Row({ space: 8 }) {
-            TextInput({ placeholder: '城市', text: this.city }).width(82).fontSize(13)
-              .fontColor('#F0F5EF').placeholderColor('#9FB5A8').backgroundColor('#1D352B')
-              .onChange((value: string) => { if (value !== this.city) { this.city = value; this.clearDestination(); } })
-            TextInput({ placeholder: '输入终点名称', text: this.query }).layoutWeight(1).fontSize(14)
-              .fontColor('#F0F5EF').placeholderColor('#9FB5A8').backgroundColor('#1D352B')
-              .onChange((value: string) => { if (value !== this.query) { this.query = value; this.clearDestination(); } })
-              .onSubmit(() => { this.search(); })
-            Button('搜索').fontSize(13).height(40).fontColor('#B5F489').backgroundColor('#294635')
-              .enabled(!this.busy && !this.starting).onClick(() => { this.search(); })
-          }.width('100%')
-          if (this.message.length > 0) {
-            Text(this.message).fontSize(12).fontColor('#E4CA92').width('100%')
-          }
-          if (this.results.length > 0) {
-            Scroll() {
-              Column({ space: 8 }) {
-                ForEach(this.results, (place: Place) => {
-                  Column({ space: 4 }) {
-                    Text(place.name).fontSize(15).fontColor('#F0F5EF').width('100%')
-                    Text(place.address || '暂无详细地址').fontSize(12).fontColor('#A4BBAA').width('100%')
-                  }.padding(12).width('100%').backgroundColor('#1D352B').borderRadius(10)
-                    .onClick(() => {
-                      this.destination = place;
-                      this.query = place.name;
-                      this.results = [];
-                      this.message = '';
-                      this.homeMap.select(place);
-                    })
-                    .accessibilityText('选择终点' + place.name + place.address)
-                }, (place: Place) => place.id + place.location)
-              }.width('100%')
-            }.width('100%').constraintSize({ maxHeight: 210 })
-          }
-          if (this.destination) {
-            Text('目的地：' + this.destination.name + ' · ' + this.destination.address)
-              .fontSize(13).fontColor('#B7C8BA').width('100%')
-          }
+          Row({ space: 12 }) {
+            Column({ space: 5 }) {
+              Text(this.destination ? this.destination.name : '你要去哪里？')
+                .fontSize(19).fontWeight(FontWeight.Medium)
+                .fontColor(this.destination ? '#F0F5EF' : '#B7C8BA').width('100%').maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+              Text(this.destination ? this.destination.address || '已选择目的地' : '搜索地点、地址')
+                .fontSize(12).fontColor('#9FB5A8').width('100%').maxLines(2)
+            }.layoutWeight(1).alignItems(HorizontalAlign.Start)
+            Text(this.destination ? '更换' : '搜索').fontSize(14).fontColor('#B5F489')
+          }.width('100%').padding(16).backgroundColor('#1D352B').borderRadius(14)
+            .enabled(!this.starting).onClick(() => { this.openSearch(); })
+            .accessibilityText('搜索目的地')
+          if (this.message) { Text(this.message).fontSize(12).fontColor('#E4CA92').width('100%') }
           Button(this.starting ? '正在打开导航…' : '开始导航').width('100%').height(46)
             .fontColor('#132019').backgroundColor('#B5F489')
-            .enabled(this.located && this.destination !== undefined && !this.busy && !this.starting)
+            .enabled(this.located && this.destination !== undefined && !this.starting)
             .onClick(() => { this.startNavigation(); })
         }.width('100%').padding(16).backgroundColor('#142B22')
       }

@@ -15,7 +15,7 @@ export class HomeMap {
   private timer: number = -1;
   private active: boolean = true;
   private onStatus: (message: string) => void = () => {};
-  private onLocated: () => void = () => {};
+  private onLocated: (longitude: number, latitude: number) => void = () => {};
   private created = (view?: MapView, name?: string): void => {
     if (!view || name !== 'lane-ahead-home') {
       return;
@@ -31,6 +31,7 @@ export class HomeMap {
       map.getUiSettings()?.setScaleControlsEnabled(true);
       map.setOnMyLocationChangeListener((location: geoLocationManager.Location) => {
         if (!this.active || !Number.isFinite(location.latitude) || !Number.isFinite(location.longitude) ||
+          Math.abs(location.latitude) > 90 || Math.abs(location.longitude) > 180 ||
           (location.latitude === 0 && location.longitude === 0) ||
           (location.timeStamp > 0 && Date.now() - location.timeStamp > 120000)) {
           return;
@@ -44,7 +45,7 @@ export class HomeMap {
         this.clearTimer();
         this.onStatus(Number.isFinite(location.accuracy) && location.accuracy > 0 ?
           '已定位到当前位置 · 精度约 ' + Math.ceil(location.accuracy) + ' 米' : '已定位到当前位置');
-        this.onLocated();
+        this.onLocated(location.longitude, location.latitude);
       });
       if (this.active) {
         this.resume();
@@ -68,7 +69,7 @@ export class HomeMap {
   }
 
   prepare(context: common.UIAbilityContext, key: string,
-    onStatus: (message: string) => void, onLocated: () => void): void {
+    onStatus: (message: string) => void, onLocated: (longitude: number, latitude: number) => void): void {
     this.active = true;
     this.onStatus = onStatus;
     this.onLocated = onLocated;
@@ -97,11 +98,9 @@ export class HomeMap {
   }
 
   locate(): void {
+    this.current = undefined;
     this.map?.setMyLocationEnabled(false);
     this.resume();
-    if (this.current) {
-      this.map?.moveCamera(CameraUpdateFactory.newLatLngZoom(this.current, 16));
-    }
   }
 
   select(destination: Place): void {

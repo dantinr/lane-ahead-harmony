@@ -43,7 +43,9 @@ function setup(options = {}) {
   });
   state.controller = new HomeMap();
   state.open = () => {
-    state.controller.prepare({}, 'a'.repeat(32), status => state.statuses.push(status), () => state.located++);
+    state.controller.prepare({}, 'a'.repeat(32), status => state.statuses.push(status), (longitude,latitude) => {
+      state.located++; state.position = {longitude,latitude};
+    });
     state.created(view, 'lane-ahead-home');
   };
   state.map = map;
@@ -69,10 +71,22 @@ test('地图只接受有效且近期的位置，暂停后忽略更新', () => {
     assert.equal(state.located, 0);
     state.locationCallback(location);
     assert.equal(state.located, 1);
+    assert.deepEqual(state.position, {longitude:116.3,latitude:39.9});
     state.controller.pause();
     state.locationCallback(location);
     assert.equal(state.located, 1);
     assert.equal(state.enabled.at(-1), false);
+  } finally { state.controller.destroy(); }
+});
+
+test('重新定位等待新位置后重新居中，不停留在上次缓存的地图中心', () => {
+  const state = setup(); state.open();
+  try {
+    const fix = {latitude:39.9,longitude:116.3,accuracy:20,timeStamp:Date.now()};
+    state.locationCallback(fix);
+    state.controller.locate();
+    state.locationCallback({...fix,longitude:117.2,latitude:39.1});
+    assert.deepEqual({...state.camera.position}, {longitude:117.2,latitude:39.1});
   } finally { state.controller.destroy(); }
 });
 
