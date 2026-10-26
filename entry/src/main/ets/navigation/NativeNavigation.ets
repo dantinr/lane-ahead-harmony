@@ -7,6 +7,7 @@ import {
 import { Place } from './RoutePlanning';
 import { LaneLookAheadSession } from './LaneLookAheadSession';
 import { NavigationHistorySession } from './NavigationHistoryStore';
+import { drivingGSession } from './DrivingGSession';
 
 export interface NavigationPanel {
   show(): void;
@@ -22,6 +23,7 @@ export class NativeNavigation {
   private historySession: NavigationHistorySession | undefined = undefined;
 
   cancelPending(): void {
+    drivingGSession.stop();
     this.generation += 1;
     this.laneSession?.dispose();
     this.laneSession = undefined;
@@ -68,6 +70,7 @@ export class NativeNavigation {
       const navi = AMapNaviFactory.getAMapNaviInstance(context.getApplicationContext(), key.trim());
       navi.setUseInnerVoice(true);
       this.laneSession?.dispose();
+      drivingGSession.stop();
       this.laneSession = undefined;
       this.historySession?.finish('ended');
       this.historySession = undefined;
@@ -81,6 +84,7 @@ export class NativeNavigation {
         historySession?.finish('ended');
         if (this.historySession === historySession) { this.historySession = undefined; }
         if (this.laneSession === laneSession) {
+          drivingGSession.stop();
           this.laneSession = undefined;
           this.lanePanel?.hide();
           this.lanePanel = undefined;
@@ -128,10 +132,13 @@ export class NativeNavigation {
           try { plannedMeters = navi.getNaviPath()?.getAllLength() || 0; } catch { /* Optional route summary. */ }
           historySession.start(plannedMeters);
           laneSession = new LaneLookAheadSession(navi, context.filesDir, (arrived: boolean) => {
-            if (generation === this.generation && !exited) { historySession?.finish(arrived ? 'arrived' : 'ended'); }
+            if (generation === this.generation && !exited) {
+              drivingGSession.stop(); historySession?.finish(arrived ? 'arrived' : 'ended');
+            }
           });
           this.laneSession = laneSession;
           laneSession.start();
+          drivingGSession.start();
           this.lanePanel = lanePanel;
           try { lanePanel?.show(); } catch {
             onStatus('实时导航已开始，前方车道面板暂不可用');
@@ -159,6 +166,7 @@ export class NativeNavigation {
         }
       });
     } catch {
+      drivingGSession.stop();
       this.historySession?.finish('failed');
       this.historySession = undefined;
       this.laneSession?.dispose();

@@ -17,6 +17,7 @@
 | `navigation/NavigationHistory.ets`、`navigation/NavigationHistoryStore.ets`、`pages/My.ets` | 导航历史模型、会话持久化与「我的」页面 |
 | `navigation/LaneCollection.ets`、`navigation/LaneCollectionStore.ets`、`pages/LaneDiagnostics.ets` | 采集状态、诊断摘要持久化与查看 |
 | `components/LaneLookAheadPanel.ets` | 顶部车道面板与原生悬浮层 |
+| `navigation/DrivingG.ets`、`navigation/DrivingGSession.ets`、`components/DrivingGReadout.ets`、`pages/DrivingG.ets` | 水平 G 值计算、传感器生命周期、导航读数与独立测量页 |
 | `pages/PlanRoute.ets`、`navigation/RoutePlanning.ets` | Web 地点搜索和指定起点规划 |
 | `pages/Index.ets`、`navigation/Guidance.ets`、`navigation/DemoRoute.ets` | 完整物理路口模型与虚构演示 |
 
@@ -35,6 +36,8 @@
 - 目的地搜索在独立原生页面进行，默认隐藏城市；跨城搜索显示实际搜索城市，结果地址保留服务返回的城市与区县。修改关键词或城市、离页或进入后台时取消旧搜索；取消返回保留原终点，只有当前搜索会话的选择结果可回填首页。Key 与坐标仅在内存交接，不放入路由参数或持久化页面状态。
 - SDK 初始化须在隐私同意与位置授权之后。处理过时异步请求，释放地图定位、监听、定时器与悬浮层；退出导航后回到首页，再次进入使用新会话。
 - 顶部面板避开转向卡片、速度表和路况条。悬浮层的全屏原生容器使用透明触摸模式，面板外的地图与导航按钮应可操作；不要用默认拦截触摸的全屏自定义组件包装它。
+- 驾驶 G 值使用去重力的线性加速度传感器，不再次扣除重力，不用 GPS 速度差冒充传感器读数；重力传感器仅用于停车校准车身水平坐标。屏幕须朝向车尾，不能平放；无法推断安装朝向的正反或绕竖直轴转动。校准要求连续静止约 2 秒且不少于 40 个样本，姿态明显变化撤下读数并提示停车重校。显示值与峰值均为滤波后的水平 G，不当作碰撞或完整三轴过载测量。采样请求 50 Hz、发布 10 Hz；时间戳乱序、两类传感器相差超过 200 ms 或数据超过 500 ms 未更新时不产生新有效读数。未校准、过期或不可用时当前值显示未知。
+- G 值仅在真实导航或独立测量页前台订阅；结束、离页或进入后台时释放自身回调和定时器，不移除 SDK 的其他监听。旧回调不能影响新会话。校准仅在应用内存保留，新次测量重置峰值，后台恢复保留本次峰值。原始样本、校准与峰值不持久化、不上传；相关限制与验证范围维护在 `docs/driving-g.md`。
 
 ## 构建与验证
 

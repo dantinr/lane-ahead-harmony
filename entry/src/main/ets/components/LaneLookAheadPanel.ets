@@ -2,6 +2,7 @@ import { LanePreviewState, PreviewLane, PreviewRow } from '../navigation/LanePre
 import { ComponentContent, UIContext } from '@kit.ArkUI';
 import { NavigationPanel } from '../navigation/NativeNavigation';
 import { LaneCollectionState } from '../navigation/LaneCollection';
+import { DrivingGReadout } from './DrivingGReadout';
 
 // Mount above navigation pages, independent of the SDK's clipped custom slots.
 // Only the panel receives touch events; the map and navigation controls remain usable.
@@ -137,6 +138,8 @@ struct LaneLookAheadPanel {
             Text('历史观测 7 天内有效，仅供参考，以现场标线为准').fontSize(10).fontColor('#FFD58A').width('100%')
           }
         }
+        Divider().color('#3C5145').margin({ top: 4, bottom: 4 })
+        DrivingGReadout({ compact: true })
     }.width(this.panelWidth()).padding(10).borderRadius(12).backgroundColor('#F2142B22')
   }
 }

@@ -2,6 +2,7 @@ import { UIAbility } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
 import { NavigationHistoryStore } from '../navigation/NavigationHistoryStore';
+import { drivingGSession } from '../navigation/DrivingGSession';
 
 export default class EntryAbility extends UIAbility {
   onWindowStageCreate(windowStage: window.WindowStage): void {
@@ -17,11 +18,15 @@ export default class EntryAbility extends UIAbility {
   }
 
   onForeground(): void {
+    drivingGSession.setForeground(true);
     AppStorage.setOrCreate('laneAheadForeground', true);
   }
 
   onBackground(): void {
+    drivingGSession.setForeground(false);
     // A replay must not keep advancing while the app is hidden.
     AppStorage.setOrCreate('laneAheadForeground', false);
   }
+
+  onDestroy(): void { drivingGSession.stop(); }
 }

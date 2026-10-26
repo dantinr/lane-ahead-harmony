@@ -237,6 +237,7 @@ struct Home {
             Text(this.webKey && this.harmonyKey ? '地图服务已默认配置' : '地图服务配置缺失，请安装已配置的应用版本')
               .fontColor('#B7C8BA').fontSize(13).width('100%')
             Button('车道采集诊断').onClick(() => { this.getUIContext().getRouter().pushUrl({ url: 'pages/LaneDiagnostics' }); })
+            Button('驾驶 G 值').onClick(() => { this.getUIContext().getRouter().pushUrl({ url: 'pages/DrivingG' }); })
             Button('指定起点规划').onClick(() => { this.getUIContext().getRouter().pushUrl({ url: 'pages/PlanRoute' }); })
             Button('车道演示').onClick(() => { this.getUIContext().getRouter().pushUrl({ url: 'pages/Index' }); })
             Text('导航页显示前方 2／3 个引导点。实际观测的车道仅保存在本机，历史参考保留 7 天。')

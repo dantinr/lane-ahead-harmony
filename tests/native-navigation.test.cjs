@@ -9,7 +9,8 @@ const context = { filesDir: '/private/files', getApplicationContext: () => 'appl
 function setup(options = {}) {
   const calls = [];
   const statuses = [];
-  const sdk = { calls, statuses, laneEvents: [], historyEvents: [], historySessions: [] };
+  const sdk = { calls, statuses, laneEvents: [], historyEvents: [], historySessions: [], gEvents: [] };
+  let gActive=false;
   const params = {
     setNaviMode(mode) { this.mode = mode; },
     setUseInnerVoice(voice) { this.voice = voice; },
@@ -21,6 +22,10 @@ function setup(options = {}) {
     exitRoutePage() { calls.push('exit'); }
   };
   const { NativeNavigation } = load('NativeNavigation', {
+    './DrivingGSession': {drivingGSession:{
+      start(){if(!gActive){gActive=true;sdk.gEvents.push('start');}},
+      stop(){if(gActive){gActive=false;sdk.gEvents.push('stop');}}
+    }},
     './NavigationHistoryStore': { NavigationHistorySession: class {
       constructor(filesDir, name, address, city) { this.name = name; this.city = city; sdk.historySessions.push(this); }
       start(meters) { this.meters = meters; sdk.historyEvents.push('start'); }
@@ -122,6 +127,18 @@ test('误进入模拟导航时停止并退出，不能显示实时导航成功',
   assert.deepEqual(sdk.calls.slice(-2), ['stop', 'exit']);
   assert.ok(!sdk.statuses.includes('实时导航已开始'));
   assert.deepEqual(sdk.laneEvents, []);
+  assert.deepEqual(sdk.gEvents, []);
+});
+
+test('驾驶G值仅在GPS开始时采集，到达或停止立即结束，退出及新会话无旧监听',async()=>{
+  const sdk=setup();await sdk.open();assert.deepEqual(sdk.gEvents,[]);
+  sdk.callback.onStartNavi(0);sdk.callback.onStartNavi(0);assert.deepEqual(sdk.gEvents,['start']);
+  sdk.endNavigation(false);assert.deepEqual(sdk.gEvents,['start','stop']);
+  const old=sdk.callback;await sdk.open();sdk.callback.onStartNavi(0);
+  old.onArriveDestination(false);assert.deepEqual(sdk.gEvents,['start','stop','start']);
+  sdk.callback.onArriveDestination(false);assert.deepEqual(sdk.gEvents,['start','stop','start','stop']);
+  await sdk.open();sdk.callback.onStartNavi(0);sdk.navigation.cancelPending();
+  assert.deepEqual(sdk.gEvents.slice(-2),['start','stop']);
 });
 
 test('退出导航关闭整组地图页面，旧回调不能重启；首页重新进入创建新会话', async () => {

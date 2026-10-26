@@ -21,6 +21,8 @@ LaneAhead 是一款自用的原生鸿蒙驾车导航应用：沿选定路线，�
 
 首页「我的」查看[导航历史](docs/navigation-history.md)：目的地、开始/结束时间、导航时长、结束状态和出发时规划里程。仅在真实导航开始后记录，本机保留最近 200 次，支持删除和清空；旧版本行驶无法补录。
 
+导航顶部另有[驾驶 G 值](docs/driving-g.md)：显示加速、刹车、左右及水平合成 G 值和本次测量峰值。「设置 → 驾驶 G 值」可独立查看；出发前固定手机、屏幕朝向车尾，停车静止校准。测量仅供参考，尚未完成实车对照验证。
+
 ## 开发与构建
 
 原生 ArkTS / ArkUI，面向 HarmonyOS 7（API 26），使用高德 HarmonyOS NEXT SDK 11.2.1；版本见 [VERSION](VERSION)。用 DevEco Studio 打开项目并同步 OHPM 依赖，运行模块选择 `entry`。在仓库根目录使用 PowerShell 7：
