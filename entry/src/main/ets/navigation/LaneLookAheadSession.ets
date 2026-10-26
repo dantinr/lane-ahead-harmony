@@ -152,7 +152,7 @@ export class LaneLookAheadSession {
     if (this.savedRevision !== this.engine.history.revision) {
       if (this.store.save(this.engine.history)) {
         this.savedRevision = this.engine.history.revision;
-        this.engine.collection.persisted(now, this.engine.history.count(now));
+        this.engine.collection.persisted(now, this.engine.history.count(now), !this.engine.history.lastChangeWasRemoval);
         force = true;
       } else {
         this.engine.collection.writeFailed(this.store.lastSaveError || '车道历史写入本机失败', now);

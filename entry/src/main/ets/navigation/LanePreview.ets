@@ -53,6 +53,7 @@ export class LaneHistory {
   static readonly MAX_AGE: number = 7 * 24 * 60 * 60 * 1000;
   private records: LaneObservation[] = [];
   revision: number = 0;
+  lastChangeWasRemoval: boolean = false;
 
   static validLanes(lanes: PreviewLane[]): boolean {
     const allowed: string[] = ['↑', '←', '→', '↶', '↷'];
@@ -89,11 +90,14 @@ export class LaneHistory {
       record.recordedAt <= now && now - record.recordedAt < LaneHistory.MAX_AGE);
     this.records.push(new LaneObservation(key, now, lanes));
     this.records = this.records.slice(-500);
+    this.lastChangeWasRemoval = false;
     this.revision += 1;
   }
 
   forget(key: string): void {
+    if (!this.records.some((record: LaneObservation) => record.key === key)) { return; }
     this.records = this.records.filter((record: LaneObservation) => record.key !== key);
+    this.lastChangeWasRemoval = true;
     this.revision += 1;
   }
 
@@ -149,6 +153,9 @@ export class LanePreviewEngine {
   private pending: LaneObservation | undefined = undefined;
   private conflictStep: number = -1;
   private observedSignature: string = '';
+  private observedRecommendation: string = '';
+  private observedRecommendedDirections: string = '';
+  private conflictReason: string = '';
   private receivedInStep: boolean = false;
   private suspended: string = '等待实时导航';
 
@@ -160,6 +167,8 @@ export class LanePreviewEngine {
     this.points = points;
     this.step = -1;
     this.observedSignature = '';
+    this.observedRecommendation = '';
+    this.observedRecommendedDirections = '';
     this.receivedInStep = false;
     this.conflictStep = -1;
   }
@@ -213,6 +222,8 @@ export class LanePreviewEngine {
       this.clearLanes();
       this.conflictStep = -1;
       this.observedSignature = '';
+      this.observedRecommendation = '';
+      this.observedRecommendedDirections = '';
       this.receivedInStep = false;
     } else if (this.infoAt > 0 && now - this.infoAt <= 5000 && this.liveStep === step && now - this.liveAt <= 15000) {
       // A visible SDK lane group stays valid while matched progress keeps arriving,
@@ -241,14 +252,29 @@ export class LanePreviewEngine {
       return;
     }
     const point = this.points.find((item: PreviewPoint) => item.step === this.step);
-    const signature = JSON.stringify(lanes);
-    if (this.observedSignature && this.observedSignature !== signature) {
+    // Recommendations may change while the physical lane group stays the same.
+    // Compare the count, left-to-right directions and special types separately.
+    const signature = JSON.stringify(lanes.map((lane: PreviewLane) =>
+      new PreviewLane(lane.directions.slice().sort(), [], lane.special)));
+    const recommendation = JSON.stringify(lanes.map((lane: PreviewLane) => lane.recommended.slice().sort()));
+    const recommendedDirections = ['↑', '←', '→', '↶', '↷'].filter((arrow: string) =>
+      lanes.some((lane: PreviewLane) => lane.recommended.indexOf(arrow) >= 0)).join('');
+    if (this.observedSignature && (this.observedSignature !== signature ||
+      this.observedRecommendedDirections !== recommendedDirections)) {
       // Several lane groups in one SDK step cannot safely be assigned to its endpoint.
+      this.conflictReason = this.observedSignature !== signature ? '本路段出现不同车道组，无法确认对应路口' :
+        '车道推荐转向发生变化，无法确认对应路口';
       this.conflictStep = this.step;
       if (point) { this.history.forget(point.key); }
       this.pending = undefined;
+    } else if (this.observedSignature && this.observedRecommendation !== recommendation &&
+      this.conflictStep !== this.step) {
+      this.collection.report('recommendation_update', '推荐已更新',
+        '车道结构一致，仅更新推荐方向，继续等待通过确认', now);
     }
     this.observedSignature = signature;
+    this.observedRecommendation = recommendation;
+    this.observedRecommendedDirections = recommendedDirections;
     this.live = lanes;
     this.liveAt = now;
     this.liveStep = this.step;
@@ -269,7 +295,7 @@ export class LanePreviewEngine {
     } else {
       this.pending = undefined;
       if (this.conflictStep === this.step) {
-        this.collection.report('lane_conflict', '未保存', '本路段出现不同车道组，无法确认对应路口', now, true);
+        this.collection.report('lane_conflict', '未保存', this.conflictReason, now, true);
       } else if (this.live.length === 0) {
         if (!this.receivedInStep) {
           this.collection.report('no_lanes', '等待车道', '高德尚未返回当前路段车道信息', now, true);

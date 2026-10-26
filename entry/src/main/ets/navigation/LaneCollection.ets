@@ -58,12 +58,13 @@ export class LaneCollection {
     this.touch(now);
   }
 
-  persisted(now: number, count: number): void {
+  persisted(now: number, count: number, learned: boolean = true): void {
     this.state.writes += 1;
     this.state.storedCount = count;
     this.state.lastSavedAt = now;
     this.state.historyWriteError = '';
-    this.report('saved', '保存成功', '车道历史更新已写入本机', now);
+    this.report(learned ? 'saved' : 'history_revoked', learned ? '保存成功' : '历史已撤销',
+      learned ? '通过确认的车道历史已写入本机' : '冲突车道历史已从本机撤销，本次未新增路口记录', now);
     this.touch(now);
   }
 

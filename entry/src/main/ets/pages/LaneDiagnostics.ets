@@ -54,10 +54,10 @@ struct LaneDiagnostics {
           Text('开始：' + this.time(this.summary.startedAt) + '\n结束：' + this.time(this.summary.endedAt) +
             '\n最近更新：' + this.time(this.summary.updatedAt)).fontSize(12).fontColor('#9FB5A8').width('100%')
           Row({ space: 10 }) { this.metric('车道回调', this.summary.received); this.metric('有效车道回调', this.summary.decoded) }.width('100%')
-          Row({ space: 10 }) { this.metric('通过路口确认', this.summary.confirmed); this.metric('历史写入成功', this.summary.writes) }.width('100%')
+          Row({ space: 10 }) { this.metric('通过路口确认', this.summary.confirmed); this.metric('文件写入成功', this.summary.writes) }.width('100%')
           Text('其中多组车道回调 ' + this.summary.alternate + ' 次，暂不用于路口学习。')
             .fontSize(12).fontColor('#9FB5A8').width('100%')
-          Text('本机有效历史：' + this.storedCount + ' 条 · 最近写入：' + this.time(this.summary.lastSavedAt))
+          Text('本机有效历史：' + this.storedCount + ' 条 · 最近文件写入：' + this.time(this.summary.lastSavedAt))
             .fontSize(13).fontColor('#B7C8BA').width('100%')
           Text('回调可能重复；通过确认仍需写入成功才会保留。写入次数含历史更新与撤销，不等于不同路口数量。')
             .fontSize(12).fontColor('#9FB5A8').width('100%')

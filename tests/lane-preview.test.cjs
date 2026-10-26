@@ -124,3 +124,75 @@ test('同段隐藏后出现另一组车道仍视为歧义，不能误存为同�
   engine.progress('selected',1,490,now + 2000,true);
   assert.equal(engine.history.find('east-left',now + 2000),undefined);
 });
+
+test('同一车道结构的推荐变化不判为冲突，连续通过后保存最新推荐', () => {
+  const engine = setup();
+  engine.progress('selected',0,50,now+100,true);
+  engine.lanes([new PreviewLane(['↑','←'],['←']),new PreviewLane(['↑','←'],[])],now+200);
+  const updated = [new PreviewLane(['↑','←'], []),new PreviewLane(['↑','←'],['←'])];
+  engine.lanes(updated,now+300);
+  assert.equal(engine.preview(3,now+300).rows[0].source,'实时');
+  assert.equal(engine.history.revision,0);
+  assert.ok(engine.collection.state.events.some(e=>e.code==='recommendation_update'));
+  assert.ok(!engine.collection.state.events.some(e=>e.code==='lane_conflict'));
+  engine.progress('selected',1,490,now+1000,true);
+  assert.deepEqual(engine.history.find('east-left',now+1000).lanes,updated);
+  assert.equal(engine.collection.state.confirmed,1);
+});
+
+test('车道结构相同但推荐转向改变仍有歧义，不能将下一路口的推荐写到当前路口', () => {
+  const engine=setup();
+  engine.progress('selected',0,30,now+100,true);engine.lanes(lanes,now+200);
+  engine.lanes([new PreviewLane(['↑','←'],['↑']),lanes[1]],now+300);
+  assert.match(engine.collection.state.lastNotSaved,/推荐转向发生变化/);
+  engine.progress('selected',1,490,now+1000,true);
+  assert.equal(engine.history.count(now+1000),0);
+});
+
+test('同一混合车道的箭头顺序变化不改变结构；车道左右顺序变化仍拒绝学习', () => {
+  for (const reorderLanes of [false,true]) {
+    const engine=setup();
+    engine.progress('selected',0,30,now+100,true);
+    engine.lanes(lanes,now+200);
+    const updated=[new PreviewLane(['←','↑'],['←']),new PreviewLane(['↑'],[])];
+    if(reorderLanes)updated.reverse();
+    engine.lanes(updated,now+300);
+    engine.progress('selected',1,490,now+1000,true);
+    assert.equal(Boolean(engine.history.find('east-left',now+1000)),!reorderLanes);
+  }
+});
+
+test('车道数量或特殊类型改变仍判冲突，后续推荐刷新不能解除真实冲突', () => {
+  for(const changed of [[...lanes,new PreviewLane(['↑'],[])],
+    [new PreviewLane(['↑','←'],['←'],'可变'),lanes[1]]]) {
+    const engine=setup();
+    engine.progress('selected',0,30,now+100,true);engine.lanes(lanes,now+200);
+    engine.lanes(changed,now+300);engine.lanes(lanes,now+400);
+    engine.progress('selected',1,490,now+1000,true);
+    assert.equal(engine.history.count(now+1000),0);
+    assert.equal(engine.collection.state.confirmed,0);
+  }
+});
+
+test('推荐变化在偏航、隐藏、过期和跳段时仍不可保存', () => {
+  for(const kind of ['replan','hide','expired','skip']) {
+    const engine=setup();
+    engine.progress('selected',0,30,now+100,true);
+    engine.lanes([new PreviewLane(['↑','←'],['←']),new PreviewLane(['↑','←'],[])],now+200);
+    engine.lanes([new PreviewLane(['↑','←'],[]),new PreviewLane(['↑','←'],['←'])],now+300);
+    assert.equal(engine.collection.state.status,'待通过确认');
+    if(kind==='replan')engine.suspend('偏航重算',now+400);
+    if(kind==='hide')engine.hideLanes(now+400);
+    engine.progress('selected',kind==='skip'?2:1,300,now+(kind==='expired'?20000:1000),true);
+    assert.equal(engine.history.count(now+21000),0,kind);
+  }
+});
+
+test('撤销不存在的历史不改变版本；实际撤销才触发一次文件更新', () => {
+  const history=new LaneHistory();
+  history.forget('missing');assert.equal(history.revision,0);
+  history.remember('a',lanes,now);assert.equal(history.lastChangeWasRemoval,false);
+  history.forget('a');assert.equal(history.revision,2);assert.equal(history.lastChangeWasRemoval,true);
+  history.forget('a');assert.equal(history.revision,2);
+  history.remember('b',lanes,now+1);assert.equal(history.lastChangeWasRemoval,false);
+});

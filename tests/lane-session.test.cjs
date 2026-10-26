@@ -5,7 +5,7 @@ const { PreviewLane, PreviewPoint, LaneHistory } = load('LanePreview');
 const stored = new Map();
 global.AppStorage = { get: key => stored.get(key), setOrCreate: (key,value) => stored.set(key,value) };
 const lanes = [new PreviewLane(['←'], ['←'])];
-function setup() {
+function setup(initialHistory = new LaneHistory()) {
   stored.clear();
   const state = { added: 0, removed: 0, saves: 0, diagnosticSaves: 0, failHistory: false, failDiagnostics: false };
   const path = id => ({ getPathid: () => BigInt(id) });
@@ -18,7 +18,7 @@ function setup() {
   };
   const { LaneLookAheadSession } = load('LaneLookAheadSession', {
     './LaneHistoryStore': { LaneHistoryStore: class {
-      load() { return new LaneHistory(); }
+      load() { return initialHistory; }
       save(history) {
         state.saves++;
         if (state.failHistory) return false;
@@ -33,7 +33,7 @@ function setup() {
       }
     } },
     './LaneSdkData': {
-      decodeLanes: info => info ? lanes : [],
+      decodeLanes: info => info ? info.lanes || lanes : [],
       routePoints: () => [new PreviewPoint(0,400,'甲 → 乙','左转','point-a',true),
         new PreviewPoint(1,900,'乙 → 丙','右转','point-b',true)]
     }
@@ -265,4 +265,33 @@ test('实际SDK到达/停止事件一次性通知导航历史，退出清理不�
     state.listener.onStopNavi(); state.session.dispose();
     assert.deepEqual(state.ends, [arrived]);
   }
+});
+
+test('空缓存出现车道结构冲突时不写空文件，也不报告保存成功', () => {
+  const state=setup();
+  try {
+    state.session.start();state.info();state.listener.showLaneInfo({});
+    state.listener.showLaneInfo({lanes:[new PreviewLane(['→'],['→'])]});
+    state.listener.showLaneInfo({lanes:[new PreviewLane(['↑'],['↑'])]});
+    assert.equal(state.saves,0);assert.equal(state.collection().writes,0);
+    assert.ok(!state.collection().events.some(e=>e.code==='saved'));
+    state.info({mCurSegIndex:1,mSegRemainDis:490});
+    assert.equal(state.collection().confirmed,0);
+  } finally {state.session.dispose();}
+});
+
+test('真实旧历史因冲突撤销时单独报告撤销，文件写入不被冒充为新采集', () => {
+  const history=new LaneHistory();history.remember('point-a',lanes,Date.now());
+  const loaded=new LaneHistory();loaded.restore(history.serialize(),Date.now());
+  const state=setup(loaded);
+  try {
+    state.session.start();state.info();state.listener.showLaneInfo({});
+    state.listener.showLaneInfo({lanes:[new PreviewLane(['→'],['→'])]});
+    assert.equal(state.saves,1);assert.equal(state.collection().writes,1);
+    assert.equal(state.collection().storedCount,0);assert.equal(state.collection().confirmed,0);
+    assert.equal(state.collection().status,'历史已撤销');
+    assert.equal(JSON.parse(state.history).records.length,0);
+    assert.ok(state.collection().events.some(e=>e.code==='history_revoked'));
+    assert.ok(!state.collection().events.some(e=>e.code==='saved'));
+  } finally {state.session.dispose();}
 });

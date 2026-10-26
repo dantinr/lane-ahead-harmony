@@ -124,7 +124,7 @@ struct LaneLookAheadPanel {
             this.laneStrip(this.preview.liveLanes, false)
           }
           Text(this.preview.status).fontSize(10).fontColor('#B7C8BA').width('100%')
-          Text(this.collection.status + ' · 写入 ' + this.collection.writes + ' 次')
+          Text(this.collection.status + ' · 本机历史 ' + this.collection.storedCount + ' 条')
             .fontSize(11).fontColor(this.collection.historyWriteError ? '#FFD58A' : '#B5F489').width('100%')
           if (this.collection.historyWriteError || this.collection.reason !== this.preview.status) {
             Text(this.collection.historyWriteError || this.collection.reason).fontSize(10).fontColor('#D1D9CF')

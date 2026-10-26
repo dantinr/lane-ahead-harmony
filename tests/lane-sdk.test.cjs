@@ -45,3 +45,92 @@ test('历史匹配包括进口/出口方向和转向，多灯步骤不能学习�
   assert.notEqual(original[0].key, otherTurn[0].key);
   assert.equal(routePoints(path(step([a,b],'甲',2,2),step([b,c],'乙',3)))[0].learnable, false);
 });
+
+test('无红绿灯、标注缺失或相互矛盾时，即使收到车道并连续通过也不保存或复用历史', () => {
+  const {LaneHistory,LanePreviewEngine}=load('LanePreview');
+  const lanes=decodeLanes({laneCount:1,backgroundLane:Int32Array.from([code('LEFT')]),frontLane:Int32Array.from([code('LEFT')])});
+  const cases=[
+    {name:'无红绿灯',count:0,signal:false},
+    {name:'段计数为零但link有灯',count:0,signal:true},
+    {name:'段计数有灯但link无灯',count:1,signal:false},
+    {name:'未提供段计数',count:undefined,signal:true},
+    {name:'段计数无效',count:NaN,signal:true},
+    {name:'段计数为负数',count:-1,signal:true},
+    {name:'未提供link标注',count:1,signal:undefined}
+  ];
+  for(const item of cases) {
+    const first=step([a,b],'甲',2);
+    const links=first.getLinks();
+    const points=routePoints({getSteps:()=>[
+      {...first,getTrafficLightCount:()=>item.count,
+        getLinks:()=>links.map(link=>({...link,getTrafficLights:()=>item.signal}))},
+      step([b,c],'乙',3)
+    ]});
+    assert.equal(points[0].learnable,false,item.name);
+    for(const seeded of [false,true]) {
+      const history=new LaneHistory();
+      if(seeded)history.remember(points[0].key,lanes,9000);
+      const revision=history.revision;
+      const engine=new LanePreviewEngine(history);
+      engine.setRoute('selected',points);engine.collection.begin(10000,history.count(10000));
+      engine.progress('selected',0,50,10000,true);engine.lanes(lanes,10100);
+      const state=engine.preview(3,10100);
+      assert.equal(state.rows[0].source,'暂无车道数据',item.name);
+      assert.equal(state.liveLanes.length,1,item.name);
+      assert.equal(engine.collection.state.status,'未保存',item.name);
+      assert.equal(engine.collection.state.reason,points[0].unlearnableReason,item.name);
+      engine.progress('selected',1,490,12000,true);
+      assert.equal(engine.collection.state.confirmed,0,item.name);
+      assert.equal(history.revision,revision,item.name);
+      assert.equal(history.count(12000),seeded?1:0,item.name);
+    }
+  }
+});
+
+function internalPath(options={}) {
+  const junctionEnd=coord(39.2001,116.1002);
+  const middle=coord(39.2,116.1002);
+  const link=(coords,signal,length,type)=>({getCoords:()=>coords,getTrafficLights:()=>signal,
+    getLength:()=>length,getRoadType:()=>type,getRoadName:()=>type===2?'路口内部':'进口道路'});
+  const links=[link([a,b],true,460,1),link([b,middle],false,20,2),link([middle,junctionEnd],false,20,2)];
+  if(options.ordinary)links[2]=link([middle,junctionEnd],false,20,1);
+  if(options.long)links[2]=link([middle,junctionEnd],false,41,2);
+  if(options.disconnected)links[2]=link([c,junctionEnd],false,20,2);
+  if(options.secondSignal)links[2]=link([middle,junctionEnd],true,20,2);
+  if(options.missingGeometry)links[2]=link(null,false,20,2);
+  const first={...step([a,b,middle,junctionEnd],'甲',2,options.multi?2:1),getLinks:()=>links};
+  const next=step([options.wrongExit?c:junctionEnd,c],'乙',3);
+  return {getSteps:()=>[first,next]};
+}
+
+test('唯一信号灯后有短且连续的路口内部道路时，允许关联引导点', () => {
+  const points=routePoints(internalPath());
+  assert.equal(points[0].learnable,true);
+  assert.match(points[0].key,/39\.200100,116\.100200/);
+});
+
+test('普通道路、超过60米、断开的几何、多灯或缺少出口不能使用内部道路关联', () => {
+  for(const option of ['ordinary','long','disconnected','secondSignal','missingGeometry','wrongExit','multi']) {
+    assert.equal(routePoints(internalPath({[option]:true}))[0].learnable,false,option);
+  }
+});
+
+test('直接位于末端的信号灯仍需进出口相连，非法端点不能产生可学习记录', () => {
+  for(const nextCoords of [[c,a],[coord(NaN,116.1),c]]) {
+    assert.equal(routePoints({getSteps:()=>[step([a,b],'甲',2),step(nextCoords,'乙',3)]})[0].learnable,false);
+  }
+});
+
+test('短路口内部道路关联仍须进入80米并连续通过，确认后才成为历史', () => {
+  const {LanePreviewEngine}=load('LanePreview');
+  const points=routePoints(internalPath());const engine=new LanePreviewEngine();
+  engine.setRoute('selected',points);engine.collection.begin(10000,0);
+  engine.progress('selected',0,100,10000,true);
+  const lanes=decodeLanes({laneCount:1,backgroundLane:Int32Array.from([code('LEFT')]),frontLane:Int32Array.from([code('LEFT')])});
+  engine.lanes(lanes,10100);assert.equal(engine.collection.state.status,'等待靠近');
+  engine.progress('selected',0,50,11000,true);assert.equal(engine.collection.state.status,'待通过确认');
+  assert.equal(engine.history.count(11000),0);
+  engine.progress('selected',1,490,14000,true);
+  assert.equal(engine.collection.state.confirmed,1);
+  assert.ok(engine.history.find(points[0].key,14000));
+});
