@@ -5,6 +5,7 @@ import { HttpRouteTransport } from '../navigation/HttpRouteTransport';
 import { searchDestinationPlaces } from '../navigation/DestinationPlaceSearch';
 import { visitedSearchCities } from '../navigation/VisitedCities';
 import { NavigationHistoryStore } from '../navigation/NavigationHistoryStore';
+import { NavigationRecord } from '../navigation/NavigationHistory';
 import { destinationSearchSession } from '../navigation/DestinationSearchSession';
 import { SearchHistory, SearchRecord } from '../navigation/SearchHistory';
 import { SearchHistoryStore } from '../navigation/SearchHistoryStore';
@@ -36,6 +37,7 @@ struct SearchDestination {
   private revision: number = 0;
   private visible: boolean = true;
   private previousKeyboardMode: KeyboardAvoidMode | undefined = undefined;
+  private previousDestinations: string[] = [];
 
   aboutToAppear(): void {
     const params = this.getUIContext().getRouter().getParams() as SearchPageParams;
@@ -53,7 +55,10 @@ struct SearchDestination {
     this.loadHistory();
     const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
     const navigationStore = new NavigationHistoryStore(context.filesDir);
-    this.visitedCities = visitedSearchCities(navigationStore.load().records);
+    const history = navigationStore.load();
+    this.visitedCities = visitedSearchCities(history.records);
+    this.previousDestinations = history.records.filter((record: NavigationRecord) => record.status === 'arrived')
+      .map((record: NavigationRecord) => record.destination);
     if (navigationStore.error) { this.message = '导航历史读取失败，暂时只搜索当前城市'; }
   }
 
@@ -180,18 +185,20 @@ struct SearchDestination {
     this.busy = true;
     try {
       const result = await searchDestinationPlaces(new AMapRouteService(this.transport, this.webKey), {
-        query: query, city: city, visitedCities: this.visitedCities.slice(), allowFallback: this.automaticScope
+        query: query, city: city, visitedCities: this.visitedCities.slice(), allowFallback: this.automaticScope,
+        previousDestinations: this.previousDestinations
       }, () => revision === this.revision && this.visible && this.foreground,
-        (fallbackCity: string) => { this.message = '当前城市未找到，正在搜索去过的城市：' + fallbackCity; });
+        (fallbackCity: string) => { this.message = '正在去过的城市查找名称匹配地点：' + fallbackCity; });
       if (!result || revision !== this.revision) { return; }
       this.results = result.places;
       this.searched = true;
       this.resultCity = result.explicitCity || result.usedVisitedCity ? result.city : '';
       this.remember(query);
-      this.message = result.places.length === 0 ? result.checkedVisitedCities > 0 ?
+      this.message = result.warning || (result.places.length === 0 ? result.checkedVisitedCities > 0 ?
         '当前城市及去过的城市均未找到相关地点，可在关键词前加城市继续搜索' :
         '未找到相关地点，试试其他关键词或修改搜索范围' :
-        result.usedVisitedCity ? '当前城市未找到，以下为去过的城市中的结果' : '';
+        !result.matchedByName && result.checkedVisitedCities > 0 ? '未找到名称匹配的地点，以下为相关结果' :
+        result.usedVisitedCity ? '已在去过的城市找到名称匹配的地点' : '');
     } catch (error) {
       if (revision === this.revision) {
         this.message = (error as Error).message || '搜索失败，请重试';
@@ -274,7 +281,7 @@ struct SearchDestination {
             .onSubmit(() => { if (this.query.trim()) { this.search(); } })
         }.width('100%').padding({ left: 20, right: 20, top: 4, bottom: 12 })
         Row() {
-          Text(this.automaticScope ? '当前城市优先，未找到时搜索已到达城市（' + this.visitedCities.length + ' 个）' :
+          Text(this.automaticScope ? '当前城市优先，无名称匹配时搜索已到达城市（' + this.visitedCities.length + ' 个）' :
             '仅搜索手动指定城市').fontSize(12).fontColor('#87938B').layoutWeight(1)
           if (!this.automaticScope) {
             Button('恢复自动范围').fontSize(12).height(30).backgroundColor(Color.Transparent).fontColor('#23864B')

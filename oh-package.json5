@@ -1,7 +1,7 @@
 {
   "modelVersion": "6.0.0",
   "name": "laneahead",
-  "version": "0.0.23",
+  "version": "0.0.24",
   "description": "未来三个路口的车道预览 · HarmonyOS 原型",
   "dependencies": {},
   "devDependencies": {}
