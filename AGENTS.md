@@ -18,6 +18,7 @@
 | `navigation/LaneCollection.ets`、`navigation/LaneCollectionStore.ets`、`pages/LaneDiagnostics.ets` | 采集状态、诊断摘要持久化与查看 |
 | `components/LaneLookAheadPanel.ets` | 顶部车道面板与原生悬浮层 |
 | `navigation/DrivingG.ets`、`navigation/DrivingGSession.ets`、`components/DrivingGReadout.ets`、`pages/DrivingG.ets` | 水平 G 值计算、传感器生命周期、导航读数与独立测量页 |
+| `navigation/Compass.ets`、`navigation/CompassSession.ets`、`components/CompassReadout.ets` | 独立 G 值页的磁北指南针、倾斜补偿与自身传感器订阅 |
 | `pages/PlanRoute.ets`、`navigation/RoutePlanning.ets` | Web 地点搜索和指定起点规划 |
 | `pages/Index.ets`、`navigation/Guidance.ets`、`navigation/DemoRoute.ets` | 完整物理路口模型与虚构演示 |
 
@@ -38,6 +39,7 @@
 - 顶部面板避开转向卡片、速度表和路况条。悬浮层的全屏原生容器使用透明触摸模式，面板外的地图与导航按钮应可操作；不要用默认拦截触摸的全屏自定义组件包装它。
 - 驾驶 G 值使用去重力的线性加速度传感器，不再次扣除重力，不用 GPS 速度差冒充传感器读数；重力传感器仅用于停车校准车身水平坐标。屏幕须朝向车尾，不能平放；无法推断安装朝向的正反或绕竖直轴转动。校准要求连续静止约 2 秒且不少于 40 个样本，姿态明显变化撤下读数并提示停车重校。显示值与峰值均为滤波后的水平 G，不当作碰撞或完整三轴过载测量。采样请求 50 Hz、发布 10 Hz；时间戳乱序、两类传感器相差超过 200 ms 或数据超过 500 ms 未更新时不产生新有效读数。未校准、过期或不可用时当前值显示未知。
 - G 值仅在真实导航或独立测量页前台订阅；结束、离页或进入后台时释放自身回调和定时器，不移除 SDK 的其他监听。旧回调不能影响新会话。校准仅在应用内存保留，新次测量重置峰值，后台恢复保留本次峰值。原始样本、校准与峰值不持久化、不上传；相关限制与验证范围维护在 `docs/driving-g.md`。
+- 指南针仅在独立 G 值页前台订阅磁场与重力，必须和 G 值使用各自的精确回调释放监听。显示磁北，不伪称真北或 GPS 行驶方向；平放参考手机物理顶端，竖放参考屏内方向的水平投影，参考切换带滞回并标明朝向含义。角度按最短方向滤波，跨越 0/360° 不绕圈；姿态或磁场过期、精度不可靠及明显场强异常时撤下指针和读数。低精度明确提示，不将正常场强当作无磁干扰的保证；不保存、上传方向或磁场样本。
 
 ## 构建与验证
 
