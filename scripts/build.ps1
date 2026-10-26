@@ -23,7 +23,7 @@ try {
     & $nodeExe scripts/prepare-local-config.cjs
     if ($LASTEXITCODE -ne 0) { throw 'Local map configuration failed' }
     $version = (Get-Content -LiteralPath (Join-Path $projectRoot 'VERSION') -Raw).Trim()
-    & $nodeExe --test tests/guidance.test.cjs tests/route-planning.test.cjs tests/native-navigation.test.cjs tests/home-map.test.cjs tests/local-config.test.cjs tests/lane-preview.test.cjs tests/lane-sdk.test.cjs tests/lane-session.test.cjs tests/lane-collection.test.cjs tests/navigation-history.test.cjs tests/search-history.test.cjs tests/search-city.test.cjs tests/destination-search.test.cjs tests/search-scope.test.cjs tests/destination-place-search.test.cjs tests/driving-g.test.cjs tests/driving-g-session.test.cjs tests/compass.test.cjs tests/compass-session.test.cjs
+    & $nodeExe --test tests/guidance.test.cjs tests/route-planning.test.cjs tests/native-navigation.test.cjs tests/home-map.test.cjs tests/local-config.test.cjs tests/lane-preview.test.cjs tests/lane-sdk.test.cjs tests/lane-session.test.cjs tests/lane-collection.test.cjs tests/navigation-history.test.cjs tests/search-history.test.cjs tests/search-city.test.cjs tests/destination-search.test.cjs tests/search-scope.test.cjs tests/destination-place-search.test.cjs tests/driving-g.test.cjs tests/driving-g-session.test.cjs tests/compass.test.cjs tests/compass-session.test.cjs tests/car-icon-spin.test.cjs tests/car-icon-session.test.cjs tests/native-route-page.test.cjs
     if ($LASTEXITCODE -ne 0) { throw '路线逻辑测试失败' }
     if ($TestOnly) { return }
     & $nodeExe $hvigorCli --mode module -p product=default -p module=entry@default -p buildMode=debug assembleHap --no-daemon

@@ -1,13 +1,15 @@
 import { abilityAccessCtrl, common, PermissionRequestResult } from '@kit.AbilityKit';
 import { geoLocationManager } from '@kit.LocationKit';
+import { UIContext } from '@kit.ArkUI';
 import { AMapPrivacyAgreeStatus, AMapPrivacyInfoStatus, AMapPrivacyShowStatus } from '@amap/amap_lbs_common';
 import {
-  AMapNaviFactory, AmapNaviPage, AmapNaviParams, AMapPageType, NaviLatLng, NaviPoi, NaviSetting, NaviType
+  AMapNaviFactory, AmapNaviParams, AmapNaviType, AMapPageType, NaviLatLng, NaviPoi, NaviSetting, NaviType
 } from '@amap/amap_lbs_navi';
 import { Place } from './RoutePlanning';
 import { LaneLookAheadSession } from './LaneLookAheadSession';
 import { NavigationHistorySession } from './NavigationHistoryStore';
 import { drivingGSession } from './DrivingGSession';
+import { nativeRoutePage } from './NativeRoutePageSession';
 
 export interface NavigationPanel {
   show(): void;
@@ -23,6 +25,7 @@ export class NativeNavigation {
   private historySession: NavigationHistorySession | undefined = undefined;
 
   cancelPending(): void {
+    nativeRoutePage.close();
     drivingGSession.stop();
     this.generation += 1;
     this.laneSession?.dispose();
@@ -34,7 +37,7 @@ export class NativeNavigation {
   }
 
   async open(context: common.UIAbilityContext, key: string, destination: Place,
-    onStatus: (message: string) => void, lanePanel?: NavigationPanel): Promise<void> {
+    onStatus: (message: string) => void, lanePanel?: NavigationPanel, ui?: UIContext): Promise<void> {
     if (!/^[a-fA-F0-9]{32}$/.test(key.trim())) {
       throw new Error('请填写 32 位高德鸿蒙导航 Key');
     }
@@ -96,12 +99,12 @@ export class NativeNavigation {
         new NaviLatLng(Number(coordinates[1]), Number(coordinates[0])), destination.id || null);
       // Omitting start makes the SDK use the current position. The native page
       // lets the user select a route before starting actual GPS navigation.
-      const params = AmapNaviParams.buildForEnd(end);
+      const params = AmapNaviParams.buildForPageType(null, null, end, AmapNaviType.Driver, AMapPageType.ROUTE);
       params.setNaviMode(NaviType.GPS);
       params.setUseInnerVoice(true);
       params.setNeedCalculateRouteWhenPresent(true);
       params.setNeedDestroyDriveManagerInstanceWhenNaviExit(true);
-      AmapNaviPage.getInstance().showRoutePage(params, {
+      await nativeRoutePage.show(params, {
         onInitNaviFailure: () => {
           if (exited || generation !== this.generation) { return; }
           historySession?.finish('failed');
@@ -120,7 +123,7 @@ export class NativeNavigation {
             exited = true;
             closeLaneSession();
             navi.stopNavi();
-            AmapNaviPage.getInstance().exitRoutePage();
+            nativeRoutePage.close();
             onStatus('未能启动 GPS 导航，请重试');
             return;
           }
@@ -158,14 +161,15 @@ export class NativeNavigation {
           if (exited || generation !== this.generation) { return; }
           exited = true;
           closeLaneSession();
-          // The SDK can retain its route page after navigation exits, without
-          // repeating this page callback on the next start. Return to Home so a
-          // new navigation always obtains a fresh SDK instance and listeners.
-          if (pageType === AMapPageType.NAVI) { AmapNaviPage.getInstance().exitRoutePage(); }
+          // Return to Home and release the owned view. A new route uses a new
+          // page session, so callbacks from the closed page cannot affect it.
+          nativeRoutePage.close();
           onStatus('已退出导航地图，可重新选择终点');
         }
-      });
+      }, navi, context.resourceManager, ui);
     } catch {
+      if (generation !== this.generation) { return; }
+      nativeRoutePage.close();
       drivingGSession.stop();
       this.historySession?.finish('failed');
       this.historySession = undefined;

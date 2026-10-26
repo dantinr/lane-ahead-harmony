@@ -4,6 +4,7 @@ import { window } from '@kit.ArkUI';
 import { NavigationHistoryStore } from '../navigation/NavigationHistoryStore';
 import { drivingGSession } from '../navigation/DrivingGSession';
 import { compassSession } from '../navigation/CompassSession';
+import { nativeRoutePage } from '../navigation/NativeRoutePageSession';
 
 export default class EntryAbility extends UIAbility {
   onWindowStageCreate(windowStage: window.WindowStage): void {
@@ -21,15 +22,17 @@ export default class EntryAbility extends UIAbility {
   onForeground(): void {
     drivingGSession.setForeground(true);
     compassSession.setForeground(true);
+    nativeRoutePage.setForeground(true);
     AppStorage.setOrCreate('laneAheadForeground', true);
   }
 
   onBackground(): void {
     drivingGSession.setForeground(false);
     compassSession.setForeground(false);
+    nativeRoutePage.setForeground(false);
     // A replay must not keep advancing while the app is hidden.
     AppStorage.setOrCreate('laneAheadForeground', false);
   }
 
-  onDestroy(): void { drivingGSession.stop(); compassSession.stop(); }
+  onDestroy(): void { nativeRoutePage.close(undefined, false); drivingGSession.stop(); compassSession.stop(); }
 }

@@ -33,6 +33,8 @@ LaneAhead 是一款自用的原生鸿蒙驾车导航应用：沿选定路线，�
 
 **G 值校准时应竖放手机，不要平放。** 将手机固定在支架上，屏幕大致垂直地面、朝向车尾，顶部朝上，允许适当倾斜；停车后点击「停车校准」，保持静止约 2 秒。调整支架或手机方向后需停车重新校准。
 
+导航地图使用[大众 Logo 车辆标记](docs/vehicle-icon.md)：停车时静止，车速越快旋转越快；顶部尖角保留车辆方向。旋转仅为视觉效果。
+
 ## 开发与构建
 
 原生 ArkTS / ArkUI，面向 HarmonyOS 7（API 26），使用高德 HarmonyOS NEXT SDK 11.2.1；版本见 [VERSION](VERSION)。用 DevEco Studio 打开项目并同步 OHPM 依赖，运行模块选择 `entry`。在仓库根目录使用 PowerShell 7：

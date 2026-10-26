@@ -18,10 +18,12 @@ function setup(options = {}) {
     setNeedDestroyDriveManagerInstanceWhenNaviExit(enabled) { this.destroyOnExit = enabled; }
   };
   const page = {
-    showRoutePage(config, callback) { sdk.config = config; sdk.callback = callback; calls.push('page'); },
-    exitRoutePage() { calls.push('exit'); }
+    active: false,
+    show(config, callback) { this.active = true; sdk.config = config; sdk.callback = callback; calls.push('page'); },
+    close() { if (this.active) { this.active = false; calls.push('exit'); } }
   };
   const { NativeNavigation } = load('NativeNavigation', {
+    './NativeRoutePageSession': { nativeRoutePage: page },
     './DrivingGSession': {drivingGSession:{
       start(){if(!gActive){gActive=true;sdk.gEvents.push('start');}},
       stop(){if(gActive){gActive=false;sdk.gEvents.push('stop');}}
@@ -66,9 +68,9 @@ function setup(options = {}) {
       NaviLatLng: class { constructor(latitude, longitude) { Object.assign(this, { latitude, longitude }); } },
       NaviPoi: class { constructor(name, coordinate, poiId) { Object.assign(this, { name, coordinate, poiId }); } },
       NaviType: { GPS: 0, EMULATOR: 1 },
+      AmapNaviType: { Driver: 0 },
       AMapPageType: { NAVI: 1, ROUTE: 0 },
-      AmapNaviParams: { buildForEnd(end) { params.end = end; return params; } },
-      AmapNaviPage: { getInstance: () => page }
+      AmapNaviParams: { buildForPageType(start, via, end, type, page) { assert.equal(start,null);assert.equal(via,null);assert.equal(page,0);params.end = end;return params; } },
     }
   });
   sdk.navigation = new NativeNavigation();

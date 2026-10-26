@@ -178,7 +178,7 @@ struct Home {
     this.starting = true;
     try {
       await this.navigation.open(this.context(), this.harmonyKey, destination,
-        (status: string) => { this.message = status; }, new LanePanelOverlay(this.getUIContext()));
+        (status: string) => { this.message = status; }, new LanePanelOverlay(this.getUIContext()), this.getUIContext());
     } catch (error) {
       this.message = (error as Error).message || '无法打开导航，请重试';
     } finally {
