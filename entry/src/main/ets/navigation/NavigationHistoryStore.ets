@@ -45,19 +45,21 @@ export class NavigationHistorySession {
   private store: NavigationHistoryStore;
   private destination: string;
   private address: string;
+  private city: string;
   private record: NavigationRecord | undefined = undefined;
   private dirty: boolean = false;
 
-  constructor(filesDir: string, destination: string, address: string) {
+  constructor(filesDir: string, destination: string, address: string, city: string = '') {
     this.store = new NavigationHistoryStore(filesDir);
     this.destination = destination.slice(0, 240); this.address = address.slice(0, 500);
+    this.city = city.slice(0, 80);
   }
 
   start(plannedMeters: number, now: number = Date.now()): void {
     if (this.record) { return; }
     const id = now.toString() + '-' + Math.random().toString(36).slice(2, 12);
     this.record = new NavigationRecord(id, this.destination, this.address, now,
-      Number.isFinite(plannedMeters) && plannedMeters >= 0 && plannedMeters <= 100000000 ? plannedMeters : 0);
+      Number.isFinite(plannedMeters) && plannedMeters >= 0 && plannedMeters <= 100000000 ? plannedMeters : 0, this.city);
     this.persist();
   }
 

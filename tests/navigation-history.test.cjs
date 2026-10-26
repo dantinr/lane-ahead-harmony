@@ -21,7 +21,7 @@ function setup() {
   };
   const classes = load('NavigationHistoryStore', {'@kit.CoreFileKit': {fileIo: fs}});
   state.store = new classes.NavigationHistoryStore('/private/files');
-  state.session = () => new classes.NavigationHistorySession('/private/files', '测试终点', '公共地点');
+  state.session = (city='') => new classes.NavigationHistorySession('/private/files', '测试终点', '公共地点', city);
   state.records = () => state.store.load().records;
   state.raw = () => state.files.get(path);
   state.path = path;
@@ -51,6 +51,15 @@ test('到达不被退出覆盖，同一会话先收到停止再收到实际到�
     assert.equal(s.records()[0].status, 'arrived');
     assert.equal(s.records()[0].endedAt, now + (stopFirst ? 1000 : 2000));
   }
+});
+
+test('目的地城市在GPS开始时持久化，到达后可重读并用于去过城市搜索', () => {
+  const s=setup();const session=s.session('北京市');session.start(1000,now);
+  assert.equal(s.records()[0].city,'北京市');
+  const {visitedSearchCities}=load('VisitedCities');
+  assert.deepEqual(visitedSearchCities(s.records()),[]);
+  session.finish('arrived',now+60000);
+  assert.deepEqual(visitedSearchCities(s.records()),['北京市']);
 });
 
 test('重启仅将未完成记录标为中断，不伪造结束时间或行驶时长', () => {

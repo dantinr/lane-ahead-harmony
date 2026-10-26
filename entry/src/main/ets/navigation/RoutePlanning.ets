@@ -6,8 +6,9 @@ export class Place {
   name: string;
   address: string;
   location: string;
+  city: string;
 
-  constructor(id: string, name: string, address: string, location: string) {
+  constructor(id: string, name: string, address: string, location: string, city: string = '') {
     const coords: string[] = location.split(',');
     if (coords.length !== 2 || coords.some((value: string) => value.trim().length === 0) ||
       !Number.isFinite(Number(coords[0])) || !Number.isFinite(Number(coords[1])) ||
@@ -18,6 +19,7 @@ export class Place {
     this.id = id;
     this.name = name;
     this.address = address;
+    this.city = city.trim().length <= 80 ? city.trim() : '';
     // AMap search and driving both use GCJ-02; never mix these with raw GPS coordinates.
     this.location = Number(coords[0]).toFixed(6) + ',' + Number(coords[1]).toFixed(6);
   }
@@ -186,7 +188,7 @@ export function decodePlaces(body: string): Place[] {
       const address = typeof poi.address === 'string' ? poi.address : '';
       const displayAddress = region && address && !address.startsWith(region) ? region + ' · ' + address :
         address || region;
-      const place = new Place(typeof poi.id === 'string' ? poi.id : '', poi.name, displayAddress, poi.location);
+      const place = new Place(typeof poi.id === 'string' ? poi.id : '', poi.name, displayAddress, poi.location, city);
       if (!result.some((existing: Place) => existing.id === place.id &&
         existing.location === place.location)) {
         result.push(place);

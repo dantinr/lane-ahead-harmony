@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const load = require('./load-ets.cjs');
 const { Place } = load('RoutePlanning');
-const destination = new Place('hospital', '测试终点', '公共地点', '116.277358,39.904898');
+const destination = new Place('hospital', '测试终点', '公共地点', '116.277358,39.904898', '北京市');
 const key = 'a'.repeat(32);
 const context = { filesDir: '/private/files', getApplicationContext: () => 'application-context' };
 
@@ -22,7 +22,7 @@ function setup(options = {}) {
   };
   const { NativeNavigation } = load('NativeNavigation', {
     './NavigationHistoryStore': { NavigationHistorySession: class {
-      constructor(filesDir, name, address) { this.name = name; sdk.historySessions.push(this); }
+      constructor(filesDir, name, address, city) { this.name = name; this.city = city; sdk.historySessions.push(this); }
       start(meters) { this.meters = meters; sdk.historyEvents.push('start'); }
       finish(status) { sdk.historyEvents.push(status); }
     } },
@@ -109,6 +109,7 @@ test('真实导航使用当前位置和正确的经纬度顺序，开启语音�
   assert.equal(sdk.config.destroyOnExit, true);
   assert.deepEqual(sdk.statuses, []);
   sdk.callback.onStartNavi(0);
+  assert.equal(sdk.historySessions[0].city,'北京市');
   assert.deepEqual(sdk.statuses, ['实时导航已开始']);
   assert.equal(sdk.filesDir, '/private/files');
   assert.deepEqual(sdk.laneEvents, ['start']);

@@ -2,7 +2,9 @@ import { common } from '@kit.AbilityKit';
 import { KeyboardAvoidMode } from '@kit.ArkUI';
 import { AMapRouteService, Place } from '../navigation/RoutePlanning';
 import { HttpRouteTransport } from '../navigation/HttpRouteTransport';
-import { resolvePlaceSearch } from '../navigation/SearchScope';
+import { searchDestinationPlaces } from '../navigation/DestinationPlaceSearch';
+import { visitedSearchCities } from '../navigation/VisitedCities';
+import { NavigationHistoryStore } from '../navigation/NavigationHistoryStore';
 import { destinationSearchSession } from '../navigation/DestinationSearchSession';
 import { SearchHistory, SearchRecord } from '../navigation/SearchHistory';
 import { SearchHistoryStore } from '../navigation/SearchHistoryStore';
@@ -24,6 +26,8 @@ struct SearchDestination {
   @State recentSearches: SearchRecord[] = [];
   @State historyError: string = '';
   @State resultCity: string = '';
+  @State automaticScope: boolean = true;
+  @State visitedCities: string[] = [];
   private session: number = 0;
   private webKey: string = '';
   private transport: HttpRouteTransport = new HttpRouteTransport();
@@ -47,6 +51,10 @@ struct SearchDestination {
       this.message = '搜索已过期，请返回首页重新打开';
     }
     this.loadHistory();
+    const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
+    const navigationStore = new NavigationHistoryStore(context.filesDir);
+    this.visitedCities = visitedSearchCities(navigationStore.load().records);
+    if (navigationStore.error) { this.message = '导航历史读取失败，暂时只搜索当前城市'; }
   }
 
   onPageShow(): void {
@@ -70,7 +78,7 @@ struct SearchDestination {
 
   private foregroundChanged(): void {
     if (!this.foreground) { this.cancelSearch(); this.cancelCity(); }
-    else if (this.visible && !this.city.trim()) { this.resolveCity(); }
+    else if (this.visible && this.automaticScope && !this.city.trim()) { this.resolveCity(); }
   }
 
   private cancelCity(): void {
@@ -171,14 +179,19 @@ struct SearchDestination {
     if (!query) { this.message = '请输入地点名称或地址'; return; }
     this.busy = true;
     try {
-      const scope = resolvePlaceSearch(query, city);
-      const places = await new AMapRouteService(this.transport, this.webKey).search(query, city);
-      if (revision !== this.revision) { return; }
-      this.results = places;
+      const result = await searchDestinationPlaces(new AMapRouteService(this.transport, this.webKey), {
+        query: query, city: city, visitedCities: this.visitedCities.slice(), allowFallback: this.automaticScope
+      }, () => revision === this.revision && this.visible && this.foreground,
+        (fallbackCity: string) => { this.message = '当前城市未找到，正在搜索去过的城市：' + fallbackCity; });
+      if (!result || revision !== this.revision) { return; }
+      this.results = result.places;
       this.searched = true;
-      this.resultCity = scope.explicitCity ? scope.city : '';
+      this.resultCity = result.explicitCity || result.usedVisitedCity ? result.city : '';
       this.remember(query);
-      this.message = places.length === 0 ? '未找到相关地点，试试其他关键词或修改搜索范围' : '';
+      this.message = result.places.length === 0 ? result.checkedVisitedCities > 0 ?
+        '当前城市及去过的城市均未找到相关地点，可在关键词前加城市继续搜索' :
+        '未找到相关地点，试试其他关键词或修改搜索范围' :
+        result.usedVisitedCity ? '当前城市未找到，以下为去过的城市中的结果' : '';
     } catch (error) {
       if (revision === this.revision) {
         this.message = (error as Error).message || '搜索失败，请重试';
@@ -254,10 +267,24 @@ struct SearchDestination {
           TextInput({ placeholder: '填写搜索城市', text: this.city }).layoutWeight(1).height(40).fontSize(14)
             .maxLength(80).fontColor('#17251D').backgroundColor('#F1F4F2')
             .onChange((value: string) => {
-              if (value !== this.city) { this.cancelCity(); this.city = value; this.edit(); }
+              if (value !== this.city) {
+                this.cancelCity(); this.automaticScope = false; this.city = value; this.edit();
+              }
             })
             .onSubmit(() => { if (this.query.trim()) { this.search(); } })
         }.width('100%').padding({ left: 20, right: 20, top: 4, bottom: 12 })
+        Row() {
+          Text(this.automaticScope ? '当前城市优先，未找到时搜索已到达城市（' + this.visitedCities.length + ' 个）' :
+            '仅搜索手动指定城市').fontSize(12).fontColor('#87938B').layoutWeight(1)
+          if (!this.automaticScope) {
+            Button('恢复自动范围').fontSize(12).height(30).backgroundColor(Color.Transparent).fontColor('#23864B')
+              .onClick(() => {
+                this.cancelCity(); this.edit(); this.automaticScope = true;
+                this.city = destinationSearchSession.request(this.session)?.city || '';
+                if (!this.city) { this.resolveCity(); }
+              })
+          }
+        }.width('100%').padding({ left: 20, right: 20, bottom: 12 })
       }
       if (this.message) {
         Text(this.message).fontSize(13).fontColor('#A36D2C').width('100%').padding({ left: 20, right: 20, top: 8, bottom: 8 })

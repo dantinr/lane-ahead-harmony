@@ -121,7 +121,8 @@ export class NativeNavigation {
             return;
           }
           closeLaneSession();
-          historySession = new NavigationHistorySession(context.filesDir, destination.name, destination.address);
+          historySession = new NavigationHistorySession(context.filesDir, destination.name, destination.address,
+            destination.city);
           this.historySession = historySession;
           let plannedMeters: number = 0;
           try { plannedMeters = navi.getNaviPath()?.getAllLength() || 0; } catch { /* Optional route summary. */ }

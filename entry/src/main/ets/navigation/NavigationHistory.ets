@@ -6,9 +6,12 @@ export class NavigationRecord {
   endedAt: number = 0;
   status: string = 'navigating';
   plannedMeters: number;
-  constructor(id: string, destination: string, address: string, startedAt: number, plannedMeters: number) {
+  city?: string;
+  constructor(id: string, destination: string, address: string, startedAt: number, plannedMeters: number,
+    city: string = '') {
     this.id = id; this.destination = destination; this.address = address;
     this.startedAt = startedAt; this.plannedMeters = plannedMeters;
+    this.city = city;
   }
 }
 
@@ -26,6 +29,7 @@ export class NavigationHistory {
       record.id.length > 0 && record.id.length <= 100 && typeof record.destination === 'string' &&
       record.destination.trim().length > 0 && record.destination.length <= 240 && typeof record.address === 'string' &&
       record.address.length <= 500 && Number.isSafeInteger(record.startedAt) && record.startedAt > 0 &&
+      (record.city === undefined || (typeof record.city === 'string' && record.city.length <= 80)) &&
       Number.isSafeInteger(record.endedAt) && record.endedAt >= 0 && Number.isFinite(record.plannedMeters) &&
       record.plannedMeters >= 0 && record.plannedMeters <= 100000000 &&
       ['navigating', 'arrived', 'ended', 'interrupted', 'failed'].indexOf(record.status) >= 0 &&
