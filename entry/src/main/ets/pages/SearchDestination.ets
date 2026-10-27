@@ -6,6 +6,7 @@ import { searchDestinationPlaces } from '../navigation/DestinationPlaceSearch';
 import { visitedSearchCities } from '../navigation/VisitedCities';
 import { NavigationHistoryStore } from '../navigation/NavigationHistoryStore';
 import { NavigationRecord } from '../navigation/NavigationHistory';
+import { FrequentDestination, frequentDestinations, frequentDestinationQuery } from '../navigation/FrequentDestinations';
 import { destinationSearchSession } from '../navigation/DestinationSearchSession';
 import { SearchHistory, SearchRecord } from '../navigation/SearchHistory';
 import { SearchHistoryStore } from '../navigation/SearchHistoryStore';
@@ -25,6 +26,7 @@ struct SearchDestination {
   @State message: string = '';
   @State results: Place[] = [];
   @State recentSearches: SearchRecord[] = [];
+  @State frequentPlaces: FrequentDestination[] = [];
   @State historyError: string = '';
   @State resultCity: string = '';
   @State automaticScope: boolean = true;
@@ -56,6 +58,7 @@ struct SearchDestination {
     const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
     const navigationStore = new NavigationHistoryStore(context.filesDir);
     const history = navigationStore.load();
+    this.frequentPlaces = frequentDestinations(history.records);
     this.visitedCities = visitedSearchCities(history.records);
     this.previousDestinations = history.records.filter((record: NavigationRecord) => record.status === 'arrived')
       .map((record: NavigationRecord) => record.destination);
@@ -215,6 +218,44 @@ struct SearchDestination {
     this.getUIContext().getRouter().back();
   }
 
+  private searchFrequent(place: FrequentDestination): void {
+    this.query = frequentDestinationQuery(place);
+    if (!place.city) {
+      this.edit();
+      this.showScope = true;
+      this.message = '该地点未记录城市，请确认搜索范围后点击搜索';
+      return;
+    }
+    this.search();
+  }
+
+  @Builder
+  frequent() {
+    if (this.frequentPlaces.length > 0) {
+      Row() {
+        Text('常去地点').fontSize(18).fontWeight(FontWeight.Medium).fontColor('#17251D').layoutWeight(1)
+        Text('按到达次数 · TOP 5').fontSize(12).fontColor('#87938B')
+      }.width('100%').margin({ top: 8, bottom: 8 })
+      ForEach(this.frequentPlaces, (place: FrequentDestination, index: number) => {
+        Row({ space: 12 }) {
+          Text(String(index + 1)).fontSize(15).fontWeight(FontWeight.Medium).fontColor('#23864B')
+            .width(28).height(28).textAlign(TextAlign.Center).backgroundColor('#EDF6EF').borderRadius(14)
+          Column({ space: 5 }) {
+            Text(place.name).fontSize(16).fontColor('#25352B').width('100%').maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+            Text((place.city || '城市未记录') + (place.address ? ' · ' + place.address : ''))
+              .fontSize(12).fontColor('#87938B').width('100%').maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+          }.layoutWeight(1).alignItems(HorizontalAlign.Start)
+          Text(place.visits + ' 次').fontSize(12).fontColor('#23864B')
+        }.width('100%').padding({ top: 12, bottom: 12 })
+          .border({ width: { bottom: 0.5 }, color: '#EDF0EE' })
+          .onClick(() => { this.searchFrequent(place); }).accessibilityText('搜索常去地点' + place.name + place.address)
+      }, (place: FrequentDestination) => place.key)
+      Blank().height(20)
+    }
+  }
+
   @Builder
   history() {
     Row() {
@@ -317,7 +358,7 @@ struct SearchDestination {
             }
           }, (place: Place) => place.id + place.location)
         } else if (!this.busy && !this.searched) {
-          ListItem() { Column() { this.history() }.width('100%') }
+          ListItem() { Column() { this.frequent(); this.history() }.width('100%') }
         }
       }.width('100%').layoutWeight(1).padding({ left: 20, right: 20 })
     }.width('100%').height('100%').backgroundColor('#FFFFFF')

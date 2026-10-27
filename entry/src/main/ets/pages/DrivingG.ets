@@ -2,13 +2,15 @@ import { DrivingGReadout } from '../components/DrivingGReadout';
 import { drivingGSession } from '../navigation/DrivingGSession';
 import { CompassReadout } from '../components/CompassReadout';
 import { compassSession } from '../navigation/CompassSession';
+import { SpiritLevelReadout } from '../components/SpiritLevelReadout';
+import { spiritLevelSession } from '../navigation/SpiritLevelSession';
 
 @Entry
 @Component
 struct DrivingG {
-  onPageShow(): void { drivingGSession.start(); compassSession.start(); }
-  onPageHide(): void { drivingGSession.stop(); compassSession.stop(); }
-  aboutToDisappear(): void { drivingGSession.stop(); compassSession.stop(); }
+  onPageShow(): void { drivingGSession.start(); compassSession.start(); spiritLevelSession.start(); }
+  onPageHide(): void { drivingGSession.stop(); compassSession.stop(); spiritLevelSession.stop(); }
+  aboutToDisappear(): void { drivingGSession.stop(); compassSession.stop(); spiritLevelSession.stop(); }
 
   build() {
     Column({ space: 20 }) {
@@ -21,6 +23,7 @@ struct DrivingG {
         Column({ space: 20 }) {
           DrivingGReadout().padding(16).backgroundColor('#1D352B').borderRadius(14)
           CompassReadout()
+          SpiritLevelReadout()
           Text('G 值：出发前将手机固定在支架上，屏幕朝向车尾；停车保持静止，点击“停车校准”。手机不要平放。')
             .fontSize(15).fontColor('#D1D9CF').width('100%')
           Text('指南针：红针指向磁北。平放时显示手机顶端朝向，竖放时按屏幕朝向车尾的安装方式显示车头朝向；磁吸支架和金属可能干扰读数。')

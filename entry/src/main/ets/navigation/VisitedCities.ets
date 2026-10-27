@@ -19,12 +19,16 @@ function cityFromAddress(value: string): string {
   return entry ? entry.split(':')[0] : '';
 }
 
+export function navigationRecordCity(record: NavigationRecord): string {
+  return knownSearchCity(record.city || '') || cityFromAddress(record.address);
+}
+
 export function visitedSearchCities(records: NavigationRecord[]): string[] {
   const cities: string[] = [];
   records.filter((record: NavigationRecord) => NavigationHistory.valid(record) && record.status === 'arrived')
     .sort((a: NavigationRecord, b: NavigationRecord) => b.endedAt - a.endedAt)
     .forEach((record: NavigationRecord) => {
-      const city = knownSearchCity(record.city || '') || cityFromAddress(record.address);
+      const city = navigationRecordCity(record);
       if (city && cities.indexOf(city) < 0) { cities.push(city); }
     });
   return cities;
