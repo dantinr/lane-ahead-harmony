@@ -5,18 +5,34 @@ import { LaneHistory } from './LanePreview';
 // App-private storage only. No upload and no full trip trace. Replace atomically.
 export class LaneHistoryStore {
   private path: string;
+  private loaded: boolean = false;
+  loadError: string = '';
   lastSaveError: string = '';
   constructor(filesDir: string) { this.path = filesDir + '/lane-observations-v1.json'; }
 
   load(): LaneHistory {
+    this.loaded = true;
+    this.loadError = '';
     const history = new LaneHistory();
     try {
-      if (fs.statSync(this.path).size <= 2000000) { history.restore(fs.readTextSync(this.path), Date.now()); }
-    } catch { /* First run or corrupt/unavailable cache: navigation remains usable. */ }
+      if (!history.restore(fs.readTextSync(this.path), Date.now())) {
+        this.loadError = '车道历史格式异常，已保留原文件并暂停覆盖；修复文件或显式清除后可重新记录';
+      }
+    } catch (error) {
+      if ((error as BusinessError).code !== 13900002) {
+        this.loadError = '车道历史读取失败，已保留原文件并暂停覆盖；请检查本机存储后重试';
+      }
+    }
     return history;
   }
 
   save(history: LaneHistory): boolean {
+    if (!this.loaded) { this.load(); }
+    if (this.loadError) { this.lastSaveError = this.loadError; return false; }
+    return this.write(history);
+  }
+
+  private write(history: LaneHistory): boolean {
     try {
       const file = fs.openSync(this.path + '.tmp', fs.OpenMode.CREATE | fs.OpenMode.TRUNC | fs.OpenMode.READ_WRITE);
       try { fs.writeSync(file.fd, history.serialize()); } finally { fs.closeSync(file); }
@@ -30,5 +46,10 @@ export class LaneHistoryStore {
     }
   }
 
-  clear(): boolean { return this.save(new LaneHistory()); }
+  clear(): boolean {
+    if (!this.write(new LaneHistory())) { return false; }
+    this.loaded = true;
+    this.loadError = '';
+    return true;
+  }
 }

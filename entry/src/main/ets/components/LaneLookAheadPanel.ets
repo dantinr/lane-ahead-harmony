@@ -64,7 +64,7 @@ struct LaneLookAheadPanel {
 
   private date(timestamp: number): string {
     const date = new Date(timestamp);
-    return (date.getMonth() + 1) + '/' + date.getDate();
+    return date.getFullYear() + '/' + (date.getMonth() + 1) + '/' + date.getDate();
   }
 
   @Builder
@@ -97,11 +97,14 @@ struct LaneLookAheadPanel {
       Row({ space: 5 }) {
         Text((index + 1) + ' · ' + this.distance(row.distance) + ' ' + row.action)
           .fontSize(13).fontWeight(FontWeight.Bold).fontColor('#F1F6F0').layoutWeight(1)
-        Text(row.source + (row.recordedAt > 0 ? ' ' + this.date(row.recordedAt) : ''))
+        Text(row.source + (row.needsRefresh ? ' · 待更新' : ''))
           .fontSize(10).fontColor(row.source === '历史参考' ? '#FFD58A' : '#B7C8BA')
       }.width('100%')
       Text(row.road).fontSize(10).fontColor('#B7C8BA').maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
         .width('100%')
+      if (row.source === '历史参考') {
+        Text('观测于 ' + this.date(row.recordedAt)).fontSize(10).fontColor('#FFD58A').width('100%')
+      }
       if (row.lanes.length > 0) { this.laneStrip(row.lanes, row.source === '历史参考') }
     }.width('100%').padding({ top: 5, bottom: 5 })
   }
@@ -119,7 +122,7 @@ struct LaneLookAheadPanel {
         }.width('100%')
         if (this.expanded) {
           ForEach(this.preview.rows, (row: PreviewRow, index: number) => { this.point(row, index) },
-            (row: PreviewRow) => row.id + row.distance + row.source + row.recordedAt + JSON.stringify(row.lanes))
+            (row: PreviewRow) => row.id + row.distance + row.source + row.recordedAt + row.needsRefresh + JSON.stringify(row.lanes))
           if (this.preview.liveLanes.length > 0) {
             Text('当前实时车道 · 未关联引导点').fontSize(10).fontColor('#B7C8BA').width('100%')
             this.laneStrip(this.preview.liveLanes, false)
@@ -135,7 +138,7 @@ struct LaneLookAheadPanel {
             Text(this.diagnosticError).fontSize(10).fontColor('#FFD58A').width('100%')
           }
           if (this.preview.rows.some((row: PreviewRow) => row.source === '历史参考')) {
-            Text('历史观测 7 天内有效，仅供参考，以现场标线为准').fontSize(10).fontColor('#FFD58A').width('100%')
+            Text('历史长期保留，满 3 个月标记待更新；以现场标线为准').fontSize(10).fontColor('#FFD58A').width('100%')
           }
         }
         Divider().color('#3C5145').margin({ top: 4, bottom: 4 })

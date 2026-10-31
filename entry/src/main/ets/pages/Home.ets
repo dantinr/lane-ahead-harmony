@@ -240,7 +240,7 @@ struct Home {
             Button('驾驶 G 值').onClick(() => { this.getUIContext().getRouter().pushUrl({ url: 'pages/DrivingG' }); })
             Button('指定起点规划').onClick(() => { this.getUIContext().getRouter().pushUrl({ url: 'pages/PlanRoute' }); })
             Button('车道演示').onClick(() => { this.getUIContext().getRouter().pushUrl({ url: 'pages/Index' }); })
-            Text('导航页显示前方 2／3 个引导点。实际观测的车道仅保存在本机，历史参考保留 7 天。')
+            Text('导航页显示前方 2／3 个引导点。车道历史仅在本机长期保存，满 3 个月标记待更新；再次经过收到有效车道后更新。')
               .fontSize(12).fontColor('#B7C8BA').width('100%')
             Button('清除历史车道').onClick(() => {
               this.message = new LaneHistoryStore(this.context().filesDir).clear() ? '历史车道已清除' : '清除失败，请重试';

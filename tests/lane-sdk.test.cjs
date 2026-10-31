@@ -121,16 +121,17 @@ test('直接位于末端的信号灯仍需进出口相连，非法端点不能�
   }
 });
 
-test('短路口内部道路关联仍须进入80米并连续通过，确认后才成为历史', () => {
+test('短路口内部道路关联成功后收到车道即保存，不再等待80米或通过', () => {
   const {LanePreviewEngine}=load('LanePreview');
   const points=routePoints(internalPath());const engine=new LanePreviewEngine();
   engine.setRoute('selected',points);engine.collection.begin(10000,0);
   engine.progress('selected',0,100,10000,true);
   const lanes=decodeLanes({laneCount:1,backgroundLane:Int32Array.from([code('LEFT')]),frontLane:Int32Array.from([code('LEFT')])});
-  engine.lanes(lanes,10100);assert.equal(engine.collection.state.status,'等待靠近');
-  engine.progress('selected',0,50,11000,true);assert.equal(engine.collection.state.status,'待通过确认');
-  assert.equal(engine.history.count(11000),0);
+  engine.lanes(lanes,10100);assert.equal(engine.collection.state.status,'正在保存');
+  assert.ok(engine.history.find(points[0].key,10100));
+  engine.progress('selected',0,50,11000,true);
+  assert.equal(engine.history.count(11000),1);
   engine.progress('selected',1,490,14000,true);
-  assert.equal(engine.collection.state.confirmed,1);
+  assert.equal(engine.collection.state.accepted,1);
   assert.ok(engine.history.find(points[0].key,14000));
 });

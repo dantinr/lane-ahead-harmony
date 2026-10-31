@@ -16,7 +16,7 @@ export class CollectionReason {
 }
 
 export class LaneCollectionState {
-  version: number = 1;
+  version: number = 2;
   startedAt: number = 0;
   endedAt: number = 0;
   updatedAt: number = 0;
@@ -25,7 +25,8 @@ export class LaneCollectionState {
   received: number = 0;
   alternate: number = 0;
   decoded: number = 0;
-  confirmed: number = 0;
+  confirmed: number = 0; // Legacy crossing counter; version 2 uses accepted instead.
+  accepted: number = 0;
   writes: number = 0;
   storedCount: number = 0;
   lastSavedAt: number = 0;
@@ -52,9 +53,9 @@ export class LaneCollection {
 
   receive(now: number): void { this.state.received += 1; this.touch(now); }
   decoded(now: number): void { this.state.decoded += 1; this.touch(now); }
-  confirmed(now: number): void {
-    this.state.confirmed += 1;
-    this.report('confirmed', '正在保存', '已连续通过路口，正在写入本机', now);
+  accepted(now: number): void {
+    this.state.accepted += 1;
+    this.report('accepted', '正在保存', '已收到并关联路口车道，立即写入本机', now);
     this.touch(now);
   }
 
@@ -64,7 +65,7 @@ export class LaneCollection {
     this.state.lastSavedAt = now;
     this.state.historyWriteError = '';
     this.report(learned ? 'saved' : 'history_revoked', learned ? '保存成功' : '历史已撤销',
-      learned ? '通过确认的车道历史已写入本机' : '冲突车道历史已从本机撤销，本次未新增路口记录', now);
+      learned ? '已关联路口的车道历史已写入本机' : '冲突车道历史已从本机撤销，本次未新增路口记录', now);
     this.touch(now);
   }
 
@@ -104,9 +105,10 @@ export function restoreCollection(text: string): LaneCollectionState {
   try {
     if (text.length > 100000) { return empty; }
     const data = JSON.parse(text) as LaneCollectionState;
-    if (!data || data.version !== 1) { return empty; }
+    if (!data || (data.version !== 1 && data.version !== 2)) { return empty; }
     const numbers: number[] = [data.startedAt, data.endedAt, data.updatedAt, data.received, data.alternate, data.decoded,
       data.confirmed, data.writes, data.storedCount, data.lastSavedAt, data.lastNotSavedAt];
+    if (data.version === 2) { numbers.push(data.accepted); }
     const strings: string[] = [data.status, data.reason, data.lastNotSaved, data.historyWriteError];
     if (!numbers.every((value: number) => Number.isSafeInteger(value) && value >= 0) ||
       !strings.every((value: string) => typeof value === 'string' && value.length <= 200) ||
@@ -116,6 +118,7 @@ export function restoreCollection(text: string): LaneCollectionState {
         event.message.length <= 200 && typeof event.warning === 'boolean') ||
       !data.reasons.every((reason: CollectionReason) => reason !== null && typeof reason.message === 'string' &&
         reason.message.length <= 200 && Number.isSafeInteger(reason.count) && reason.count > 0)) { return empty; }
+    if (data.version === 1) { data.accepted = 0; }
     return data;
   } catch { return empty; }
 }

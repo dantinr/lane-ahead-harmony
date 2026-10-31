@@ -9,6 +9,8 @@ struct LaneDiagnostics {
   @State summary: LaneCollectionState = new LaneCollectionState();
   @State events: CollectionEvent[] = [];
   @State storedCount: number = 0;
+  @State refreshDueCount: number = 0;
+  @State historyError: string = '';
   @StorageProp('laneAheadCollectionPersistenceError') diagnosticError: string = '';
 
   aboutToAppear(): void { this.refresh(); }
@@ -21,7 +23,12 @@ struct LaneDiagnostics {
       this.summary = current;
     }
     this.events = this.summary.events.slice().reverse();
-    this.storedCount = new LaneHistoryStore(context.filesDir).load().count(Date.now());
+    const store = new LaneHistoryStore(context.filesDir);
+    const history = store.load();
+    const now = Date.now();
+    this.storedCount = history.count(now);
+    this.refreshDueCount = history.refreshDueCount(now);
+    this.historyError = store.loadError;
   }
 
   private time(at: number): string {
@@ -54,12 +61,23 @@ struct LaneDiagnostics {
           Text('开始：' + this.time(this.summary.startedAt) + '\n结束：' + this.time(this.summary.endedAt) +
             '\n最近更新：' + this.time(this.summary.updatedAt)).fontSize(12).fontColor('#9FB5A8').width('100%')
           Row({ space: 10 }) { this.metric('车道回调', this.summary.received); this.metric('有效车道回调', this.summary.decoded) }.width('100%')
-          Row({ space: 10 }) { this.metric('通过路口确认', this.summary.confirmed); this.metric('文件写入成功', this.summary.writes) }.width('100%')
+          Row({ space: 10 }) {
+            this.metric(this.summary.version === 1 ? '旧版通过确认' : '关联采集次数',
+              this.summary.version === 1 ? this.summary.confirmed : this.summary.accepted)
+            this.metric('本次文件写入', this.summary.writes)
+          }.width('100%')
           Text('其中多组车道回调 ' + this.summary.alternate + ' 次，暂不用于路口学习。')
             .fontSize(12).fontColor('#9FB5A8').width('100%')
           Text('本机有效历史：' + this.storedCount + ' 条 · 最近文件写入：' + this.time(this.summary.lastSavedAt))
             .fontSize(13).fontColor('#B7C8BA').width('100%')
-          Text('回调可能重复；通过确认仍需写入成功才会保留。写入次数含历史更新与撤销，不等于不同路口数量。')
+          Text('长期保存，不按时间或条数自动清理；满 3 个月待更新：' + this.refreshDueCount + ' 条。' +
+            '待更新记录仍可参考，再次经过收到有效车道后更新，不在后台自动获取。')
+            .fontSize(12).fontColor('#9FB5A8').width('100%')
+          if (this.historyError) { Text(this.historyError).fontSize(14).fontColor('#FFD58A').width('100%') }
+          Text(this.summary.version === 1 ? '这是旧版导航摘要；新版在收到有效且可关联的红绿灯路口车道后立即保存，无需通过路口。' :
+            '关联成功立即保存，无需通过路口；重复回调不重复写入，推荐车道更新会再次保存。')
+            .fontSize(12).fontColor('#9FB5A8').width('100%')
+          Text('以上计数仅属于最近一次导航；文件写入含更新与冲突撤销，不等于不同路口数量。本机有效历史为当前缓存总条数。')
             .fontSize(12).fontColor('#9FB5A8').width('100%')
           if (this.summary.historyWriteError) {
             Text(this.summary.historyWriteError).fontSize(14).fontColor('#FFD58A').width('100%')

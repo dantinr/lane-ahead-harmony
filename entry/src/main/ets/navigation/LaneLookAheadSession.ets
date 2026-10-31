@@ -84,6 +84,10 @@ export class LaneLookAheadSession {
     this.weakGps = false;
     this.gpsEnabled = true;
     this.engine.collection.begin(Date.now(), this.engine.history.count(Date.now()));
+    if (this.store.loadError) {
+      this.engine.collection.state.historyWriteError = this.store.loadError;
+      this.engine.collection.report('history_read_failed', '历史读取失败', this.store.loadError, Date.now(), true);
+    }
     AppStorage.setOrCreate('laneAheadPanelExpanded', true);
     this.reloadRoute();
     this.publish(true);

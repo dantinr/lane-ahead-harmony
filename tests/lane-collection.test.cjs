@@ -16,26 +16,26 @@ function engine(eligible = true, reason = '') {
   return result;
 }
 
-test('明确区分未收到、空数据、等待靠近、待通过与内存确认，诊断不包含道路与坐标', () => {
+test('明确区分未收到、空数据与立即关联采集，内存采集不冒充写入且诊断脱敏', () => {
   const e = engine();
   assert.match(e.collection.state.reason, /尚未返回/);
   e.lanes([], now + 10);
   assert.match(e.collection.state.lastNotSaved, /为空或不完整/);
   e.progress('private-route-id', 0, 100, now + 20, true);
   e.lanes(lanes, now + 30);
-  assert.equal(e.collection.state.status, '等待靠近');
+  assert.equal(e.collection.state.status, '正在保存');
+  assert.equal(e.collection.state.accepted, 1);
   e.progress('private-route-id', 0, 50, now + 40, true);
-  assert.equal(e.collection.state.status, '待通过确认');
-  assert.equal(e.collection.state.confirmed, 0);
+  assert.equal(e.collection.state.accepted, 1);
   e.progress('private-route-id', 1, 490, now + 100, true);
-  assert.equal(e.collection.state.confirmed, 1);
+  assert.equal(e.collection.state.accepted, 1);
   assert.equal(e.collection.state.writes, 0);
   assert.equal(e.collection.state.received, 2);
   assert.equal(e.collection.state.decoded, 1);
   assert.doesNotMatch(JSON.stringify(e.collection.state), /private-|39\.91|116\.31|道路名称/);
 });
 
-test('多灯、隐藏、车道冲突、跳段和位置失效分别保留原因且均不保存', () => {
+test('多灯与失效位置不采集；已采集后隐藏和位置间隔不删除，冲突会撤销', () => {
   const ambiguous = engine(false, '本路段包含多个信号灯，无法确定车道对应路口');
   ambiguous.lanes(lanes, now + 10);
   assert.match(ambiguous.collection.state.lastNotSaved, /多个信号灯/);
@@ -48,27 +48,26 @@ test('多灯、隐藏、车道冲突、跳段和位置失效分别保留原因�
       e.lanes(lanes, now + 10);
       if (kind === 'hide') {
         e.hideLanes(now + 20);
-        assert.match(e.collection.state.lastNotSaved, /高德已.*隐藏/);
+        assert.match(e.collection.state.reason, /高德已.*隐藏/);
       } else if (kind === 'conflict') {
         e.lanes([new PreviewLane(['→'], ['→'])], now + 20);
         assert.match(e.collection.state.lastNotSaved, /不同车道组/);
       } else {
         e.progress('private-route-id', 1, 490, now + 6000, true);
-        assert.ok(e.collection.state.reasons.some(r => /未能确认连续通过/.test(r.message)));
       }
     }
-    assert.equal(e.collection.state.confirmed, 0, kind);
-    assert.equal(e.history.count(now + 6000), 0, kind);
+    assert.equal(e.collection.state.accepted, kind === 'delayed-lanes' ? 0 : 1, kind);
+    assert.equal(e.history.count(now + 6000), ['hide','stale'].includes(kind) ? 1 : 0, kind);
   }
 });
 
-test('导航结束保留此前原因，尚未越点时明确提示取消；定位超时可诊断', () => {
+test('导航结束无需越点且保留已采集历史，定位超时仍可诊断', () => {
   const e = engine();
   e.lanes(lanes, now + 10);
   e.finish('导航已结束', now + 20);
-  assert.match(e.collection.state.lastNotSaved, /未确认通过路口/);
+  assert.ok(!e.collection.state.events.some(event=>event.code==='ended_before_crossing'));
   assert.equal(e.collection.state.status, '采集已结束');
-  assert.equal(e.history.count(now + 20), 0);
+  assert.equal(e.history.count(now + 20), 1);
   const stale = engine();
   stale.lanes(lanes, now + 10);
   stale.preview(3, now + 16000);
@@ -87,11 +86,23 @@ test('连续相同原因不刷屏，事件与原因有界，快照和恢复不�
   collection.end('已结束', now + 1000);
   assert.equal(snapshot.endedAt, 0);
   assert.deepEqual(restoreCollection(JSON.stringify(snapshot)), snapshot);
-  for (const text of ['{', 'null', '{}', '{"version":2}',
+  for (const text of ['{', 'null', '{}', '{"version":3}',
     JSON.stringify({...snapshot, writes: -1}), JSON.stringify({...snapshot, events: [null]}),
+    JSON.stringify({...snapshot, accepted: -1}),JSON.stringify({...snapshot, accepted: undefined}),
     JSON.stringify({...snapshot, reasons: [{message:'a',count:0}]}), 'x'.repeat(100001)]) {
     assert.equal(restoreCollection(text).startedAt, 0);
   }
+});
+
+test('兼容旧版通过确认摘要但不将其伪装为新版即时采集次数', () => {
+  const collection=new LaneCollection();collection.begin(now,1);
+  const old={...collection.snapshot(),version:1,confirmed:3,writes:2};delete old.accepted;
+  const restored=restoreCollection(JSON.stringify(old));
+  assert.equal(restored.version,1);assert.equal(restored.confirmed,3);assert.equal(restored.accepted,0);
+  collection.accepted(now+10);collection.persisted(now+20,2);
+  const current=restoreCollection(JSON.stringify(collection.snapshot()));
+  assert.equal(current.version,2);assert.equal(current.accepted,1);assert.equal(current.confirmed,0);
+  assert.match(current.events.find(e=>e.code==='saved').message,/已关联/);
 });
 
 test('诊断原子写入，失败不替换原摘要，诊断文件独立于车道历史', () => {

@@ -48,7 +48,7 @@ function setup(initialHistory = new LaneHistory()) {
   state.pathFactory = path;
   return state;
 }
-test('只采集选定路线 GPS 导航；连续通过后持久化；退出移除监听和定时器', () => {
+test('只采集选定路线 GPS 导航；回调时立即持久化；退出移除监听和定时器', () => {
   const state = setup();
   try {
     state.info();
@@ -58,6 +58,7 @@ test('只采集选定路线 GPS 导航；连续通过后持久化；退出移除
     assert.equal(state.preview().rows.length, 2);
     state.listener.showLaneInfo({});
     assert.equal(state.preview().rows[0].source, '实时');
+    assert.equal(state.saves, 1);
     state.info({mCurSegIndex:1,mSegRemainDis:490});
     assert.equal(state.saves, 1);
     assert.equal(JSON.parse(state.history).records[0].key, 'point-a');
@@ -69,6 +70,20 @@ test('只采集选定路线 GPS 导航；连续通过后持久化；退出移除
   assert.equal(state.removed, 1);
 });
 
+test('立即保存不需要后续位置事件；重复回调、弱定位、隐藏和结束保留文件且不重复写', () => {
+  const state=setup();
+  try{
+    state.session.start();state.info({mSegRemainDis:300});state.listener.showLaneInfo({});
+    assert.equal(state.saves,1);assert.equal(JSON.parse(state.history).records.length,1);
+    state.listener.showLaneInfo({});state.info({mSegRemainDis:250});
+    assert.equal(state.saves,1);assert.equal(state.collection().accepted,1);
+    state.listener.onGpsSignalWeak(true);state.listener.showLaneInfo({});
+    state.listener.hideLaneInfo();state.session.stop('导航已结束');
+    assert.equal(state.saves,1);assert.equal(JSON.parse(state.history).records.length,1);
+    assert.equal(state.diagnostic.writes,1);assert.equal(state.diagnostic.storedCount,1);
+  }finally{state.session.dispose();}
+});
+
 test('导航期间显示采集流程并在结束后保留计数与原因，忽略晚到回调', () => {
   const state = setup();
   try {
@@ -78,18 +93,18 @@ test('导航期间显示采集流程并在结束后保留计数与原因，忽�
     state.listener.showLaneInfo({});
     assert.equal(state.collection().received, 1);
     assert.equal(state.collection().decoded, 1);
-    assert.equal(state.collection().status, '待通过确认');
-    assert.equal(state.collection().writes, 0);
+    assert.equal(state.collection().status, '保存成功');
+    assert.equal(state.collection().writes, 1);
     state.info({mCurSegIndex:1,mSegRemainDis:490});
-    assert.equal(state.collection().confirmed, 1);
+    assert.equal(state.collection().accepted, 1);
     assert.equal(state.collection().writes, 1);
     assert.equal(state.collection().storedCount, 1);
-    assert.equal(state.collection().status, '保存成功');
+    assert.equal(state.collection().status, '等待车道');
     state.info({mCurSegIndex:1,mSegRemainDis:50});
     state.listener.showLaneInfo({}); state.listener.hideLaneInfo();
     state.session.stop('已到达目的地');
-    assert.match(state.diagnostic.reasons.map(r => r.message).join(), /高德已.*隐藏/);
-    assert.match(state.diagnostic.lastNotSaved, /高德已.*隐藏/);
+    assert.ok(state.diagnostic.events.some(e=>e.code==='lane_hidden'));
+    assert.equal(state.diagnostic.storedCount,2);
     assert.equal(state.diagnostic.status, '采集已结束');
     const final = JSON.stringify(state.diagnostic);
     state.listener.showLaneInfo({}); state.listener.hideLaneInfo(); state.listener.onGpsSignalWeak(true);
@@ -116,10 +131,10 @@ test('另一类多组车道回调单独计数，不能被误报为从未收到�
 test('写入失败不能报告保存成功，重试成功后清除错误并落盘诊断', () => {
   const state = setup();
   try {
-    state.session.start(); state.info(); state.listener.showLaneInfo({});
+    state.session.start(); state.info();
     state.failHistory = true;
-    state.info({mCurSegIndex:1,mSegRemainDis:490});
-    assert.equal(state.collection().confirmed, 1);
+    state.listener.showLaneInfo({});
+    assert.equal(state.collection().accepted, 1);
     assert.equal(state.collection().writes, 0);
     assert.equal(state.collection().status, '保存失败');
     assert.match(state.collection().historyWriteError, /写入本机失败/);
@@ -138,15 +153,16 @@ test('诊断写入节流，退出强制保存，诊断失败不影响导航及�
     state.session.start();
     assert.match(stored.get('laneAheadCollectionPersistenceError'), /诊断写入失败/);
     const initial = state.diagnosticSaves;
-    state.info(); state.listener.showLaneInfo({});
+    state.info();
     assert.equal(state.diagnosticSaves, initial);
+    state.listener.showLaneInfo({});
     state.info({mCurSegIndex:1,mSegRemainDis:490});
     assert.equal(state.collection().writes, 1);
     assert.equal(JSON.parse(state.history).records.length, 1);
     state.failDiagnostics = false;
     state.session.stop('导航已结束');
     assert.equal(stored.get('laneAheadCollectionPersistenceError'), '');
-    assert.equal(state.diagnostic.confirmed, 1);
+    assert.equal(state.diagnostic.accepted, 1);
     assert.equal(state.diagnostic.status, '采集已结束');
   } finally { state.session.dispose(); }
 });
@@ -158,7 +174,7 @@ test('偏航重算、弱信号和模拟信息清空车道，等待新路线或�
     state.info(); state.listener.showLaneInfo({});
     assert.equal(state.preview().rows.length, 0);
     state.listener.onUpdateNaviPath(); state.info();
-    assert.equal(state.preview().rows[0].source, '暂无车道数据');
+    assert.equal(state.preview().rows[0].source, '历史参考');
     state.listener.onGpsSignalWeak(true); state.info();
     assert.equal(state.preview().rows.length, 0);
     state.listener.onGpsOpenStatus(true); state.info();
@@ -167,7 +183,7 @@ test('偏航重算、弱信号和模拟信息清空车道，等待新路线或�
     assert.equal(state.preview().rows.length, 0);
     state.info();
     assert.equal(state.preview().rows.length, 2);
-    assert.equal(state.saves, 0);
+    assert.equal(state.saves, 1);
   } finally { state.session.dispose(); }
 });
 test('路线选择键与原生 ID 分别解析，另一条路线延迟回调不能显示或存档', () => {
@@ -185,7 +201,7 @@ test('路线选择键与原生 ID 分别解析，另一条路线延迟回调不�
   } finally { state.session.dispose(); }
 });
 
-test('SDK 实际透传 bigint 或十进制字符串的原生 ID 时，精确匹配后可连续越点保存', () => {
+test('SDK 实际透传 bigint 或十进制字符串的原生 ID 时，精确匹配后立即保存', () => {
   const id = '9223372036854775701';
   for (const pathID of [BigInt(id), id]) {
     const state = setup();
@@ -195,8 +211,9 @@ test('SDK 实际透传 bigint 或十进制字符串的原生 ID 时，精确匹�
       state.session.start(); state.info({pathID});
       assert.equal(state.preview().rows.length, 2);
       state.listener.showLaneInfo({});
+      assert.equal(state.saves, 1);
       state.info({pathID, mCurSegIndex:1, mSegRemainDis:490});
-      assert.equal(state.collection().confirmed, 1);
+      assert.equal(state.collection().accepted, 1);
       assert.equal(state.saves, 1);
       state.session.stop('导航已结束');
       const event = state.diagnostic.events.find(e => e.code === 'route_match');
@@ -235,7 +252,7 @@ test('拒绝精度丢失、相邻大整数和无效路线标识，不能将数�
   }
 });
 test('本机历史原子替换写入，写入失败保留原文件且关闭文件', () => {
-  let original = 'previous'; let temporary = ''; let closed = 0; let fail = false;
+  let original = '{"version":1,"records":[]}'; let temporary = ''; let closed = 0; let fail = false;
   const { LaneHistoryStore } = load('LaneHistoryStore', { '@kit.CoreFileKit': { fileIo: {
     OpenMode: {CREATE:1, TRUNC:2, READ_WRITE:4},
     openSync(path) { assert.match(path,/\.tmp$/); return {fd:1}; },
@@ -257,6 +274,81 @@ test('本机历史原子替换写入，写入失败保留原文件且关闭文�
   assert.ok(store.load().find('a',Date.now()));
 });
 
+test('大于2MB且超过500条的旧车道文件仍完整读取、原子保存和再次读取', () => {
+  const old = new Date(2020, 0, 1).getTime();
+  const records = Array.from({length: 1200}, (_, i) => ({key: `${i}:` + 'x'.repeat(1900), recordedAt: old, lanes}));
+  let original = JSON.stringify({version: 1, records});
+  assert.ok(Buffer.byteLength(original) > 2000000);
+  let temporary = '';
+  const { LaneHistoryStore } = load('LaneHistoryStore', { '@kit.CoreFileKit': { fileIo: {
+    OpenMode: {CREATE:1, TRUNC:2, READ_WRITE:4},
+    readTextSync() { return original; },
+    openSync() { return {fd:1}; },
+    writeSync(_, text) { temporary = text; },
+    closeSync() {},
+    renameSync() { original = temporary; }
+  } } });
+  const store = new LaneHistoryStore('/private/files');
+  const history = store.load();
+  assert.equal(store.loadError, '');
+  assert.equal(history.count(Date.now()), 1200);
+  assert.equal(history.find(records[0].key, Date.now()).recordedAt, old);
+  history.remember('latest', lanes, Date.now());
+  assert.equal(store.save(history), true);
+  const reloaded = store.load();
+  assert.equal(reloaded.count(Date.now()), 1201);
+  assert.equal(reloaded.refreshDueCount(Date.now()), 1200);
+  assert.ok(reloaded.find(records[1199].key, Date.now()));
+});
+
+test('损坏车道文件不能被空历史或新采集覆盖，只有显式清除成功后可重建', () => {
+  for (const invalid of ['{broken', '{"version":2,"records":[]}',
+    JSON.stringify({version: 1, records: [{key:'bad', recordedAt:0, lanes:[]}]})]) {
+    let original = invalid; let temporary = ''; let writes = 0; let fail = false;
+    const { LaneHistoryStore } = load('LaneHistoryStore', { '@kit.CoreFileKit': { fileIo: {
+      OpenMode: {CREATE:1, TRUNC:2, READ_WRITE:4},
+      readTextSync() { return original; },
+      openSync() { writes++; if (fail) throw Error('full'); return {fd:1}; },
+      writeSync(_, text) { temporary = text; },
+      closeSync() {},
+      renameSync() { original = temporary; }
+    } } });
+    const store = new LaneHistoryStore('/private/files');
+    const history = new LaneHistory();
+    history.remember('new', lanes, Date.now());
+    assert.equal(store.save(history), false); // Guard even when load() was not called explicitly.
+    assert.match(store.loadError, /保留原文件/);
+    assert.equal(writes, 0);
+    assert.equal(original, invalid);
+    fail = true;
+    assert.equal(store.clear(), false);
+    assert.equal(store.save(history), false);
+    assert.equal(original, invalid);
+    fail = false;
+    assert.equal(store.clear(), true);
+    assert.equal(store.loadError, '');
+    assert.equal(store.load().count(Date.now()), 0);
+    assert.equal(store.save(history), true);
+    assert.ok(store.load().find('new', Date.now()));
+  }
+});
+
+test('首次没有车道文件可正常写入，读取权限错误则暂停覆盖', () => {
+  for (const code of [13900002, 13900001]) {
+    let writes = 0;
+    const { LaneHistoryStore } = load('LaneHistoryStore', { '@kit.CoreFileKit': { fileIo: {
+      OpenMode: {CREATE:1, TRUNC:2, READ_WRITE:4},
+      readTextSync() { throw {code}; },
+      openSync() { writes++; return {fd:1}; },
+      writeSync() {}, closeSync() {}, renameSync() {}
+    } } });
+    const store = new LaneHistoryStore('/private/files');
+    assert.equal(store.load().count(Date.now()), 0);
+    assert.equal(store.save(new LaneHistory()), code === 13900002);
+    assert.equal(writes, code === 13900002 ? 1 : 0);
+  }
+});
+
 test('实际SDK到达/停止事件一次性通知导航历史，退出清理不能覆盖到达', () => {
   for (const arrived of [true, false]) {
     const state = setup();
@@ -267,16 +359,17 @@ test('实际SDK到达/停止事件一次性通知导航历史，退出清理不�
   }
 });
 
-test('空缓存出现车道结构冲突时不写空文件，也不报告保存成功', () => {
+test('即时保存后发现结构冲突会撤销，持续冲突不反复写空文件', () => {
   const state=setup();
   try {
     state.session.start();state.info();state.listener.showLaneInfo({});
     state.listener.showLaneInfo({lanes:[new PreviewLane(['→'],['→'])]});
     state.listener.showLaneInfo({lanes:[new PreviewLane(['↑'],['↑'])]});
-    assert.equal(state.saves,0);assert.equal(state.collection().writes,0);
-    assert.ok(!state.collection().events.some(e=>e.code==='saved'));
+    assert.equal(state.saves,2);assert.equal(state.collection().writes,2);
+    assert.equal(JSON.parse(state.history).records.length,0);
+    assert.ok(state.collection().events.some(e=>e.code==='history_revoked'));
     state.info({mCurSegIndex:1,mSegRemainDis:490});
-    assert.equal(state.collection().confirmed,0);
+    assert.equal(state.collection().accepted,1);
   } finally {state.session.dispose();}
 });
 
@@ -287,11 +380,11 @@ test('真实旧历史因冲突撤销时单独报告撤销，文件写入不被�
   try {
     state.session.start();state.info();state.listener.showLaneInfo({});
     state.listener.showLaneInfo({lanes:[new PreviewLane(['→'],['→'])]});
-    assert.equal(state.saves,1);assert.equal(state.collection().writes,1);
-    assert.equal(state.collection().storedCount,0);assert.equal(state.collection().confirmed,0);
+    assert.equal(state.saves,2);assert.equal(state.collection().writes,2);
+    assert.equal(state.collection().storedCount,0);assert.equal(state.collection().accepted,1);
     assert.equal(state.collection().status,'历史已撤销');
     assert.equal(JSON.parse(state.history).records.length,0);
     assert.ok(state.collection().events.some(e=>e.code==='history_revoked'));
-    assert.ok(!state.collection().events.some(e=>e.code==='saved'));
+    assert.ok(state.collection().events.some(e=>e.code==='saved'));
   } finally {state.session.dispose();}
 });

@@ -50,7 +50,7 @@ class HistoryFile {
 }
 
 export class LaneHistory {
-  static readonly MAX_AGE: number = 7 * 24 * 60 * 60 * 1000;
+  static readonly REFRESH_MONTHS: number = 3;
   private records: LaneObservation[] = [];
   revision: number = 0;
   lastChangeWasRemoval: boolean = false;
@@ -66,30 +66,39 @@ export class LaneHistory {
         lane.recommended.every((arrow: string) => lane.directions.indexOf(arrow) >= 0));
   }
 
-  restore(text: string, now: number): void {
+  // A refresh date is advisory: old observations remain available until replaced or explicitly removed.
+  static needsRefresh(recordedAt: number, now: number): boolean {
+    if (!Number.isFinite(recordedAt) || recordedAt < 0 || recordedAt > now) { return false; }
+    const due = new Date(recordedAt);
+    const day = due.getDate();
+    due.setDate(1);
+    due.setMonth(due.getMonth() + LaneHistory.REFRESH_MONTHS);
+    const lastDay = new Date(due.getFullYear(), due.getMonth() + 1, 0).getDate();
+    due.setDate(Math.min(day, lastDay));
+    return now >= due.getTime();
+  }
+
+  restore(text: string, now: number): boolean {
     this.records = [];
     try {
-      if (text.length > 2000000) { return; }
       const data = JSON.parse(text) as HistoryFile;
-      if (!data || data.version !== 1 || !Array.isArray(data.records)) { return; }
+      if (!data || data.version !== 1 || !Array.isArray(data.records)) { return false; }
       this.records = data.records.filter((record: LaneObservation) => record !== null &&
         typeof record.key === 'string' && record.key.length > 0 && record.key.length <= 2048 &&
-        Number.isFinite(record.recordedAt) && record.recordedAt <= now &&
-        now - record.recordedAt < LaneHistory.MAX_AGE && LaneHistory.validLanes(record.lanes)).slice(-500);
-    } catch { this.records = []; }
+        Number.isFinite(record.recordedAt) && record.recordedAt >= 0 && record.recordedAt <= now &&
+        LaneHistory.validLanes(record.lanes));
+      return this.records.length === data.records.length;
+    } catch { this.records = []; return false; }
   }
 
   find(key: string, now: number): LaneObservation | undefined {
-    return this.records.find((record: LaneObservation) => record.key === key &&
-      record.recordedAt <= now && now - record.recordedAt < LaneHistory.MAX_AGE);
+    return this.records.find((record: LaneObservation) => record.key === key && record.recordedAt <= now);
   }
 
   remember(key: string, lanes: PreviewLane[], now: number): void {
-    if (!key || key.length > 2048 || !LaneHistory.validLanes(lanes)) { return; }
-    this.records = this.records.filter((record: LaneObservation) => record.key !== key &&
-      record.recordedAt <= now && now - record.recordedAt < LaneHistory.MAX_AGE);
+    if (!key || key.length > 2048 || !Number.isFinite(now) || now < 0 || !LaneHistory.validLanes(lanes)) { return; }
+    this.records = this.records.filter((record: LaneObservation) => record.key !== key);
     this.records.push(new LaneObservation(key, now, lanes));
-    this.records = this.records.slice(-500);
     this.lastChangeWasRemoval = false;
     this.revision += 1;
   }
@@ -108,8 +117,11 @@ export class LaneHistory {
   }
 
   count(now: number): number {
-    return this.records.filter((record: LaneObservation) => record.recordedAt <= now &&
-      now - record.recordedAt < LaneHistory.MAX_AGE).length;
+    return this.records.filter((record: LaneObservation) => record.recordedAt <= now).length;
+  }
+
+  refreshDueCount(now: number): number {
+    return this.records.filter((record: LaneObservation) => LaneHistory.needsRefresh(record.recordedAt, now)).length;
   }
 }
 
@@ -121,8 +133,9 @@ export class PreviewRow {
   lanes: PreviewLane[];
   source: string;
   recordedAt: number;
+  needsRefresh: boolean;
   constructor(id: string, distance: number, road: string, action: string,
-    lanes: PreviewLane[], source: string, recordedAt: number = 0) {
+    lanes: PreviewLane[], source: string, recordedAt: number = 0, needsRefresh: boolean = false) {
     this.id = id;
     this.distance = distance;
     this.road = road;
@@ -130,6 +143,7 @@ export class PreviewRow {
     this.lanes = lanes;
     this.source = source;
     this.recordedAt = recordedAt;
+    this.needsRefresh = needsRefresh;
   }
 }
 
@@ -150,7 +164,7 @@ export class LanePreviewEngine {
   private liveAt: number = 0;
   private live: PreviewLane[] = [];
   private liveStep: number = -1;
-  private pending: LaneObservation | undefined = undefined;
+  private savedSignature: string = '';
   private conflictStep: number = -1;
   private observedSignature: string = '';
   private observedRecommendation: string = '';
@@ -162,7 +176,7 @@ export class LanePreviewEngine {
   constructor(history: LaneHistory = new LaneHistory()) { this.history = history; }
 
   setRoute(id: string, points: PreviewPoint[]): void {
-    this.suspend('路线更新，等待当前路线位置', Date.now(), this.pending !== undefined || this.live.length > 0);
+    this.suspend('路线更新，等待当前路线位置', Date.now(), this.live.length > 0);
     this.route = id;
     this.points = points;
     this.step = -1;
@@ -171,6 +185,7 @@ export class LanePreviewEngine {
     this.observedRecommendedDirections = '';
     this.receivedInStep = false;
     this.conflictStep = -1;
+    this.savedSignature = '';
   }
 
   suspend(reason: string, now: number = Date.now(), notSaved: boolean = true): void {
@@ -181,25 +196,19 @@ export class LanePreviewEngine {
   }
 
   finish(reason: string, now: number): void {
-    if (this.pending) {
-      this.collection.report('ended_before_crossing', '未保存', '导航结束前未确认通过路口，待保存记录已取消', now, true);
-    }
     this.suspend(reason, now, false);
     this.collection.end(reason, now);
   }
 
   hideLanes(now: number = Date.now()): void {
-    const hadPending = this.pending !== undefined;
     this.clearLanes();
-    this.collection.report('lane_hidden', '等待车道', hadPending ?
-      '高德已在通过确认前隐藏车道，待保存记录已取消' : '高德已隐藏车道，等待新的车道信息', now, hadPending);
+    this.collection.report('lane_hidden', '等待车道', '高德已隐藏实时车道，等待新的车道信息', now);
   }
 
   private clearLanes(): void {
     this.live = [];
     this.liveAt = 0;
     this.liveStep = -1;
-    this.pending = undefined;
   }
 
   progress(route: string, step: number, remaining: number, now: number, realtime: boolean): void {
@@ -212,14 +221,8 @@ export class LanePreviewEngine {
       return;
     }
     if (step !== this.step) {
-      // Commit only after a continuous, forward crossing of the observed guidance point.
-      if (this.pending && step === this.step + 1 && now - this.infoAt <= 5000 && this.infoAt > 0) {
-        this.history.remember(this.pending.key, this.pending.lanes, now);
-        this.collection.confirmed(now);
-      } else if (this.pending) {
-        this.collection.report('crossing_lost', '未保存', '路段跳变或定位间隔超过 5 秒，未能确认连续通过', now, true);
-      }
       this.clearLanes();
+      this.savedSignature = '';
       this.conflictStep = -1;
       this.observedSignature = '';
       this.observedRecommendation = '';
@@ -234,7 +237,7 @@ export class LanePreviewEngine {
     this.traveled = point.endMeters - remaining;
     this.infoAt = now;
     this.suspended = '';
-    this.prepareObservation(now);
+    this.captureObservation(now);
   }
 
   lanes(lanes: PreviewLane[], now: number): void {
@@ -246,7 +249,7 @@ export class LanePreviewEngine {
       return;
     }
     this.collection.decoded(now);
-    if (!this.infoAt || now - this.infoAt > 2500 || this.suspended) {
+    if (!this.infoAt || now < this.infoAt || now - this.infoAt > 2500 || this.suspended) {
       this.clearLanes();
       this.collection.report('lane_without_position', '未保存', '收到车道，但缺少 2.5 秒内的有效路线位置', now, true);
       return;
@@ -266,11 +269,10 @@ export class LanePreviewEngine {
         '车道推荐转向发生变化，无法确认对应路口';
       this.conflictStep = this.step;
       if (point) { this.history.forget(point.key); }
-      this.pending = undefined;
     } else if (this.observedSignature && this.observedRecommendation !== recommendation &&
       this.conflictStep !== this.step) {
       this.collection.report('recommendation_update', '推荐已更新',
-        '车道结构一致，仅更新推荐方向，继续等待通过确认', now);
+        '车道结构一致，立即保存最新推荐车道', now);
     }
     this.observedSignature = signature;
     this.observedRecommendation = recommendation;
@@ -278,7 +280,7 @@ export class LanePreviewEngine {
     this.live = lanes;
     this.liveAt = now;
     this.liveStep = this.step;
-    this.prepareObservation(now);
+    this.captureObservation(now);
   }
 
   private bindable(point: PreviewPoint): boolean {
@@ -286,14 +288,24 @@ export class LanePreviewEngine {
       point.endMeters - this.traveled <= 200;
   }
 
-  private prepareObservation(now: number): void {
+  private captureObservation(now: number): void {
     const point = this.points.find((item: PreviewPoint) => item.step === this.step);
-    if (point && this.bindable(point) && point.endMeters - this.traveled <= 80 &&
+    if (point && point.learnable && point.step === this.liveStep && this.conflictStep !== this.step &&
       this.live.length > 0 && now - this.liveAt <= 15000) {
-      this.pending = new LaneObservation(point.key, now, this.live);
-      this.collection.report('pending', '待通过确认', '已收到车道，等待连续通过路口后保存', now);
+      // Capture as soon as a valid callback belongs to the current signal junction.
+      // Distance and crossing do not gate storage. Repeated progress/callbacks do not rewrite it.
+      const signature = this.observedSignature + '|' + this.observedRecommendation;
+      if (signature !== this.savedSignature) {
+        const revision = this.history.revision;
+        this.history.remember(point.key, this.live, now);
+        if (this.history.revision !== revision) {
+          this.savedSignature = signature;
+          this.collection.accepted(now);
+        } else {
+          this.collection.report('invalid_key', '未保存', '路口标识不可用于保存车道', now, true);
+        }
+      }
     } else {
-      this.pending = undefined;
       if (this.conflictStep === this.step) {
         this.collection.report('lane_conflict', '未保存', this.conflictReason, now, true);
       } else if (this.live.length === 0) {
@@ -303,9 +315,7 @@ export class LanePreviewEngine {
       } else if (point && !point.learnable) {
         this.collection.report('unlearnable', '未保存', point.unlearnableReason, now, true);
       } else if (now - this.liveAt > 15000) {
-        this.collection.report('lane_expired', '未保存', '车道信息超过 15 秒未刷新，已取消待保存记录', now, true);
-      } else {
-        this.collection.report('too_far', '等待靠近', '已收到车道，进入路口前 80 米后才准备保存', now);
+        this.collection.report('lane_expired', '暂停采集', '实时车道超过 15 秒未刷新，等待新的车道信息', now, true);
       }
     }
   }
@@ -314,9 +324,8 @@ export class LanePreviewEngine {
     const state = new LanePreviewState();
     if (!this.infoAt || now - this.infoAt > 15000 || this.suspended) {
       state.status = this.suspended || '定位更新中，暂不提示车道';
-      this.pending = undefined;
       if (!this.suspended) {
-        this.collection.report('position_expired', '暂停采集', '定位超过 15 秒未更新，待保存记录已取消', now, true);
+        this.collection.report('position_expired', '暂停采集', '定位超过 15 秒未更新，暂停接收新车道', now, true);
       }
       return state;
     }
@@ -330,7 +339,8 @@ export class LanePreviewEngine {
         }
         const record = point.learnable ? this.history.find(point.key, now) : undefined;
         if (record && !(point.step === this.step && this.conflictStep === this.step)) {
-          return new PreviewRow(point.key, distance, point.road, point.action, record.lanes, '历史参考', record.recordedAt);
+          return new PreviewRow(point.key, distance, point.road, point.action, record.lanes, '历史参考', record.recordedAt,
+            LaneHistory.needsRefresh(record.recordedAt, now));
         }
         return new PreviewRow(point.key, distance, point.road, point.action, [], '暂无车道数据');
       });
