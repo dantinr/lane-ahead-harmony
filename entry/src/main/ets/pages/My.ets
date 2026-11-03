@@ -83,6 +83,8 @@ struct My {
             .fontSize(14).fontColor('#B5F489').width('100%')
           Text('仅保存在本机，最多保留最近 200 次。导航时长含停留时间，规划里程以出发时选定路线为准。')
             .fontSize(12).fontColor('#9FB5A8').width('100%')
+          Button('车道记录').width('100%').fontColor('#B5F489').backgroundColor('#263F2E')
+            .onClick(() => { this.getUIContext().getRouter().pushUrl({ url: 'pages/LaneRecords' }); })
           Button('车道采集诊断').width('100%').fontColor('#B5F489').backgroundColor('#263F2E')
             .onClick(() => { this.getUIContext().getRouter().pushUrl({ url: 'pages/LaneDiagnostics' }); })
           if (this.readError || this.saveError) {

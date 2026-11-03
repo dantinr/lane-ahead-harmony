@@ -16,6 +16,7 @@
 | `pages/NativeRoute.ets`、`navigation/NativeRoutePageSession.ets`、`navigation/CarIconSession.ets`、`navigation/CarIconSpin.ets` | 自有 SDK 导航视图、页面会话与随车速旋转的大众车标 |
 | `navigation/LaneSdkData.ets`、`navigation/LanePreview.ets` | SDK 数据适配、引导点距离、实时车道与历史匹配 |
 | `navigation/LaneHistoryStore.ets` | 应用私有目录中的车道缓存 |
+| `navigation/LaneHistoryView.ets`、`pages/LaneRecords.ets` | 「我的」中的车道记录浏览、道路名解析与待更新筛选；不显示原始匹配键或坐标 |
 | `navigation/NavigationHistory.ets`、`navigation/NavigationHistoryStore.ets`、`pages/My.ets` | 导航历史模型、会话持久化与「我的」页面 |
 | `navigation/LaneCollection.ets`、`navigation/LaneCollectionStore.ets`、`pages/LaneDiagnostics.ets` | 采集状态、诊断摘要持久化与查看 |
 | `components/LaneLookAheadPanel.ets` | 顶部车道面板与原生悬浮层 |

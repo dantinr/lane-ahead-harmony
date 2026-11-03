@@ -4,6 +4,35 @@ const load = require('./load-ets.cjs');
 const { PreviewLane, PreviewPoint, LaneHistory, LanePreviewEngine } = load('LanePreview');
 const lanes = [new PreviewLane(['↑', '←'], ['←']), new PreviewLane(['↑'], [])];
 const now = new Date(2026, 10, 1, 12).getTime();
+const { laneHistoryRows } = load('LaneHistoryView');
+
+test('车道记录按观测时间倒序，解析道路名并保留推荐和待更新标记，不修改真实历史', () => {
+  const history = new LaneHistory();
+  const old = new Date(2020, 0, 1).getTime();
+  const key = JSON.stringify(['甲路', '乙路', '2', 'private-geometry']);
+  history.remember(key, lanes, old);
+  history.remember(JSON.stringify(['丙路', '丁路', '3', 'other-geometry']), lanes, now);
+  const original = history.serialize();
+  const rows = laneHistoryRows(history, now);
+  assert.deepEqual(rows.map(r => r.road), ['丙路 → 丁路', '甲路 → 乙路']);
+  assert.deepEqual(rows.map(r => r.needsRefresh), [false, true]);
+  assert.deepEqual(rows[1].lanes[0].recommended, ['←']);
+  rows[0].lanes[0].recommended.length = 0;
+  rows.reverse();
+  assert.equal(history.serialize(), original);
+  assert.equal(history.revision, 2);
+});
+
+test('未知或损坏匹配键不将原始键和坐标暴露为道路名，空历史可正常展示', () => {
+  assert.deepEqual(laneHistoryRows(new LaneHistory(), now), []);
+  for (const key of ['private-geometry', 'null', '["甲路",3,"2","private-geometry"]', '["","乙路","2","private-geometry"]']) {
+    const history = new LaneHistory();
+    history.remember(key, lanes, now);
+    const row = laneHistoryRows(history, now)[0];
+    assert.equal(row.road, '道路名称暂不可用');
+    assert.deepEqual(row.lanes, JSON.parse(JSON.stringify(lanes)));
+  }
+});
 function setup(history = new LaneHistory()) {
   const engine = new LanePreviewEngine(history);
   engine.setRoute('selected', [

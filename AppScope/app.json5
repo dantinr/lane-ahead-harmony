@@ -2,8 +2,8 @@
   "app": {
     "bundleName": "com.laneahead.app",
     "vendor": "LaneAhead",
-    "versionCode": 10022,
-    "versionName": "0.0.31",
+    "versionCode": 10023,
+    "versionName": "0.0.32",
     "icon": "$media:app_icon",
     "label": "$string:app_name"
   }

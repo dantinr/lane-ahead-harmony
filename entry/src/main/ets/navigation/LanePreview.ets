@@ -123,6 +123,12 @@ export class LaneHistory {
   refreshDueCount(now: number): number {
     return this.records.filter((record: LaneObservation) => LaneHistory.needsRefresh(record.recordedAt, now)).length;
   }
+
+  observations(now: number): LaneObservation[] {
+    const copy = JSON.parse(JSON.stringify(this.records)) as LaneObservation[];
+    return copy.filter((record: LaneObservation) => record.recordedAt <= now)
+      .sort((a: LaneObservation, b: LaneObservation) => b.recordedAt - a.recordedAt);
+  }
 }
 
 export class PreviewRow {
