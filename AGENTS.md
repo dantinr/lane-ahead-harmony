@@ -19,7 +19,7 @@
 | `navigation/LaneHistoryView.ets`、`pages/LaneRecords.ets` | 「我的」中的车道记录浏览、道路名解析与待更新筛选；不显示原始匹配键或坐标 |
 | `navigation/NavigationHistory.ets`、`navigation/NavigationHistoryStore.ets`、`pages/My.ets` | 导航历史模型、会话持久化与「我的」页面 |
 | `navigation/LaneCollection.ets`、`navigation/LaneCollectionStore.ets`、`pages/LaneDiagnostics.ets` | 采集状态、诊断摘要持久化与查看 |
-| `components/LaneLookAheadPanel.ets` | 顶部车道面板与原生悬浮层 |
+| `components/LaneLookAheadPanel.ets`、`components/LanePreviewRows.ets` | 顶部车道面板、原生悬浮层及编号旁的逐路口车道；演示复用相同的行组件 |
 | `navigation/DrivingG.ets`、`navigation/DrivingGSession.ets`、`components/DrivingGReadout.ets`、`pages/DrivingG.ets` | 水平 G 值计算、传感器生命周期、导航读数与独立测量页 |
 | `navigation/Compass.ets`、`navigation/CompassSession.ets`、`components/CompassReadout.ets` | 独立 G 值页的磁北指南针、倾斜补偿与自身传感器订阅 |
 | `navigation/SpiritLevel.ets`、`navigation/SpiritLevelSession.ets`、`components/SpiritLevelReadout.ets` | 独立 G 值页的双轴水平仪与自身重力监听 |

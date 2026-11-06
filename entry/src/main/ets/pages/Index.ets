@@ -1,6 +1,8 @@
 import { LaneArrow } from '../components/LaneArrow';
+import { LanePreviewRows } from '../components/LanePreviewRows';
+import { PreviewLane, PreviewRow } from '../navigation/LanePreview';
 import { createDemoRoute } from '../navigation/DemoRoute';
-import { Lane, LookAheadEngine, PreviewStatus, RouteProgress, UpcomingJunction } from '../navigation/Guidance';
+import { Lane, LookAheadEngine, PreviewStatus, RouteProgress, Turn, UpcomingJunction } from '../navigation/Guidance';
 
 @Entry
 @Component
@@ -10,6 +12,8 @@ struct Index {
   @State speed: number = 60;
   @State playing: boolean = false;
   @State missingLanes: boolean = false;
+  @State compactPreview: boolean = false;
+  @StorageProp('laneAheadWindowWidth') windowWidth: number = 360;
   @State upcoming: UpcomingJunction[] = [];
   @State remaining: number = 2300;
   @State status: PreviewStatus = PreviewStatus.ACTIVE;
@@ -91,6 +95,17 @@ struct Index {
     return guidance === undefined ? [] : guidance.lanes;
   }
 
+  private arrow(turn: Turn): string {
+    return turn === Turn.LEFT ? '←' : turn === Turn.RIGHT ? '→' : turn === Turn.U_TURN ? '↶' : '↑';
+  }
+
+  private previewRows(): PreviewRow[] {
+    return this.upcoming.map((item: UpcomingJunction) => new PreviewRow(item.junction.id, item.remainingMeters,
+      item.junction.name, item.junction.turn, this.lanes(item).map((lane: Lane) => new PreviewLane(
+        lane.directions.map((turn: Turn) => this.arrow(turn)),
+        lane.recommendedDirections.map((turn: Turn) => this.arrow(turn)))), '虚构演示'));
+  }
+
   @Builder
   countButton(count: number) {
     Button(count + ' 个', { type: ButtonType.Normal })
@@ -166,6 +181,9 @@ struct Index {
 
       Row({ space: 6 }) {
         Text('预览前方').fontSize(14).fontColor('#C8D8CC').layoutWeight(1)
+        Button(this.compactPreview ? '路口卡片' : '面板样式').height(32).fontSize(12)
+          .fontColor('#B5F489').backgroundColor('#263F2E')
+          .onClick(() => { this.compactPreview = !this.compactPreview; })
         this.countButton(2)
         this.countButton(3)
       }.width('100%')
@@ -175,9 +193,17 @@ struct Index {
 
       Scroll() {
         Column({ space: 10 }) {
-          ForEach(this.upcoming, (item: UpcomingJunction, index: number) => {
-            this.junctionCard(item, index)
-          }, (item: UpcomingJunction, index: number) => item.junction.id + '-' + index + '-' + this.missingLanes)
+          if (this.compactPreview) {
+            Column({ space: 2 }) {
+              Text('前方车道 · 虚构演示').fontSize(14).fontWeight(FontWeight.Bold).fontColor('#F1F6F0').width('100%')
+              LanePreviewRows({ rows: this.previewRows() })
+            }.width(Math.max(200, Math.min(420, this.windowWidth - 132))).padding(10)
+              .borderRadius(12).backgroundColor('#142B22')
+          } else {
+            ForEach(this.upcoming, (item: UpcomingJunction, index: number) => {
+              this.junctionCard(item, index)
+            }, (item: UpcomingJunction, index: number) => item.junction.id + '-' + index + '-' + this.missingLanes)
+          }
           if (this.upcoming.length === 0) {
             Column({ space: 10 }) {
               Text(this.status === PreviewStatus.ARRIVED ? '已到达演示终点' : '前方暂无需要提示的路口')

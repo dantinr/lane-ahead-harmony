@@ -1,4 +1,5 @@
-import { LanePreviewState, PreviewLane, PreviewRow } from '../navigation/LanePreview';
+import { LanePreviewState, PreviewRow } from '../navigation/LanePreview';
+import { LanePreviewRows, PreviewLaneStrip } from './LanePreviewRows';
 import { ComponentContent, UIContext } from '@kit.ArkUI';
 import { NavigationPanel } from '../navigation/NativeNavigation';
 import { LaneCollectionState } from '../navigation/LaneCollection';
@@ -58,57 +59,6 @@ struct LaneLookAheadPanel {
     return Math.max(200, Math.min(420, this.windowWidth - 132));
   }
 
-  private distance(meters: number): string {
-    return meters >= 1000 ? (meters / 1000).toFixed(1) + ' km' : Math.ceil(meters) + ' m';
-  }
-
-  private date(timestamp: number): string {
-    const date = new Date(timestamp);
-    return date.getFullYear() + '/' + (date.getMonth() + 1) + '/' + date.getDate();
-  }
-
-  @Builder
-  laneStrip(lanes: PreviewLane[], history: boolean) {
-    Scroll() {
-      Row({ space: 4 }) {
-        ForEach(lanes, (lane: PreviewLane) => {
-          Row({ space: 1 }) {
-            if (lane.special) {
-              Text(lane.special).fontSize(11).fontColor('#CBD7D1')
-            } else {
-              ForEach(lane.directions, (arrow: string) => {
-                Text(arrow).fontSize(21).fontWeight(FontWeight.Bold)
-                  .fontColor(lane.recommended.indexOf(arrow) >= 0 ? (history ? '#FFD58A' : '#B5F489') : '#8B9E94')
-              }, (arrow: string) => arrow)
-            }
-          }.constraintSize({ minWidth: 30 }).height(30).justifyContent(FlexAlign.Center)
-            .padding({ left: 4, right: 4 }).borderRadius(5)
-            .backgroundColor(lane.recommended.length > 0 ? (history ? '#59452A' : '#2F5037') : '#24382D')
-            .accessibilityText(lane.special || lane.directions.join('、') +
-              (lane.recommended.length > 0 ? '，推荐' + lane.recommended.join('、') : ''))
-        })
-      }
-    }.scrollable(ScrollDirection.Horizontal).scrollBar(BarState.Off).width('100%').height(32)
-  }
-
-  @Builder
-  point(row: PreviewRow, index: number) {
-    Column({ space: 3 }) {
-      Row({ space: 5 }) {
-        Text((index + 1) + ' · ' + this.distance(row.distance) + ' ' + row.action)
-          .fontSize(13).fontWeight(FontWeight.Bold).fontColor('#F1F6F0').layoutWeight(1)
-        Text(row.source + (row.needsRefresh ? ' · 待更新' : ''))
-          .fontSize(10).fontColor(row.source === '历史参考' ? '#FFD58A' : '#B7C8BA')
-      }.width('100%')
-      Text(row.road).fontSize(10).fontColor('#B7C8BA').maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
-        .width('100%')
-      if (row.source === '历史参考') {
-        Text('观测于 ' + this.date(row.recordedAt)).fontSize(10).fontColor('#FFD58A').width('100%')
-      }
-      if (row.lanes.length > 0) { this.laneStrip(row.lanes, row.source === '历史参考') }
-    }.width('100%').padding({ top: 5, bottom: 5 })
-  }
-
   build() {
     Column({ space: 2 }) {
         Row({ space: 6 }) {
@@ -121,11 +71,10 @@ struct LaneLookAheadPanel {
             .onClick(() => { this.expanded = !this.expanded; })
         }.width('100%')
         if (this.expanded) {
-          ForEach(this.preview.rows, (row: PreviewRow, index: number) => { this.point(row, index) },
-            (row: PreviewRow) => row.id + row.distance + row.source + row.recordedAt + row.needsRefresh + JSON.stringify(row.lanes))
+          LanePreviewRows({ rows: this.preview.rows })
           if (this.preview.liveLanes.length > 0) {
             Text('当前实时车道 · 未关联引导点').fontSize(10).fontColor('#B7C8BA').width('100%')
-            this.laneStrip(this.preview.liveLanes, false)
+            PreviewLaneStrip({ lanes: this.preview.liveLanes })
           }
           Text(this.preview.status).fontSize(10).fontColor('#B7C8BA').width('100%')
           Text(this.collection.status + ' · 本机历史 ' + this.collection.storedCount + ' 条')
